@@ -1,30 +1,22 @@
-import os
-from dotenv import load_dotenv
 import sys
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QPushButton
 from PyQt6.QtCore import QTimer
 from pybit.unified_trading import HTTP
-import time
 from datetime import datetime, timedelta
+import time
 
 class FundingStatsApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Bybit Funding Rates")
+        self.setWindowTitle("Bybit Funding Rates (Top 5 by Deviation)")
         self.setGeometry(100, 100, 600, 400)
 
         # Ініціалізація клієнта Bybit
-        self.session = HTTP(testnet=True)
+        self.session = HTTP(testnet=False)  # Спробуйте testnet=False, якщо дані не повертаються
 
-        load_dotenv()
-        API_KEY = os.getenv('BYBIT_API_KEY')
-        API_SECRET = os.getenv('BYBIT_API_SECRET')
-
-        # Ініціалізація клієнта Bybit
-        self.session = HTTP(testnet=True) ### 
-        self.session = HTTP(api_key=API_KEY, api_secret=API_SECRET)
-        # Список торгових пар для відображення
-        self.symbols = ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT", "ADAUSDT"]
+        # Кількість пар для відображення
+        self.top_n = 10
+        self.symbols = []  # Буде заповнено динамічно
 
         # Налаштування інтерфейсу
         self.setup_ui()
@@ -35,9 +27,11 @@ class FundingStatsApp(QMainWindow):
         self.timer.start(60000)  # 60 секунд
 
         # Початкове оновлення даних
+        print("Initializing application...")
         self.update_funding_data()
 
     def setup_ui(self):
+        print("Setting up UI...")
         # Основний віджет і лейаут
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -45,7 +39,7 @@ class FundingStatsApp(QMainWindow):
 
         # Таблиця для відображення даних
         self.table = QTableWidget()
-        self.table.setRowCount(len(self.symbols))
+        self.table.setRowCount(self.top_n)
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels(["Symbol", "Funding Rate (%)", "Time to Next Funding"])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Заборона редагування
@@ -60,46 +54,102 @@ class FundingStatsApp(QMainWindow):
         # Додавання елементів до лейауту
         layout.addWidget(self.table)
         layout.addWidget(self.refresh_button)
+        print("UI setup completed")
+
+    def get_top_funding_symbols(self):
+        try:
+            print("Fetching tickers...")
+            response = self.session.get_tickers(category="linear")
+            if response["retCode"] != 0:
+                print(f"Error fetching tickers: {response['retMsg']}")
+                return []
+
+            symbols = [item["symbol"] for item in response["result"]["list"] if item["symbol"].endswith("USDT")]
+            print(f"Found {len(symbols)} USDT pairs")
+
+            # Обмежуємо кількість пар для прискорення (наприклад, перші 50)
+            symbols = symbols[:50]  # Зменшуємо кількість запитів
+            print(f"Processing {len(symbols)} symbols for funding rates...")
+
+            # Отримання фандинг-рейтів
+            funding_rates = []
+            for i, symbol in enumerate(symbols):
+                try:
+                    response = self.session.get_funding_rate_history(
+                        category="linear",
+                        symbol=symbol,
+                        limit=1
+                    )
+                    if response["retCode"] == 0 and response["result"]["list"]:
+                        funding_data = response["result"]["list"][0]
+                        funding_rate = float(funding_data["fundingRate"]) * 100
+                        funding_time = int(funding_data["fundingRateTimestamp"]) / 1000
+                        funding_rates.append({
+                            "symbol": symbol,
+                            "funding_rate": funding_rate,
+                            "funding_time": funding_time
+                        })
+                        print(f"Processed {symbol}: {funding_rate:.4f}%")
+                    else:
+                        print(f"Error fetching funding rate for {symbol}: {response['retMsg']}")
+                except Exception as e:
+                    print(f"Error fetching funding rate for {symbol}: {e}")
+                # Затримка для уникнення ліміту запитів
+                if i % 10 == 9:
+                    time.sleep(1)  # Затримка 1 секунда після кожних 10 запитів
+
+            # Сортування за абсолютним значенням фандинг-рейту
+            funding_rates.sort(key=lambda x: abs(x["funding_rate"]), reverse=True)
+            top_symbols = funding_rates[:self.top_n]
+            print(f"Top {self.top_n} symbols: {[item['symbol'] for item in top_symbols]}")
+            return top_symbols
+
+        except Exception as e:
+            print(f"Error in get_top_funding_symbols: {e}")
+            return []
 
     def update_funding_data(self):
         try:
-            for row, symbol in enumerate(self.symbols):
-                # Отримання даних про фандинг для конкретного символу
-                response = self.session.get_funding_rate_history(
-                    category="linear",
-                    symbol=symbol,
-                    limit=1  # Отримуємо лише останній запис
-                )
-                
-                # Перевірка, чи запит успішний
-                if response["retCode"] == 0:
-                    funding_data = response["result"]["list"][0]
-                    
-                    # Символ
-                    self.table.setItem(row, 0, QTableWidgetItem(symbol))
+            print("Updating funding data...")
+            # Отримання топ-5 символів
+            self.symbols = self.get_top_funding_symbols()
 
-                    # Відсоток фандингу
-                    funding_rate = float(funding_data["fundingRate"]) * 100  # Перетворення у відсотки
-                    self.table.setItem(row, 1, QTableWidgetItem(f"{funding_rate:.4f}%"))
+            # Оновлення таблиці
+            self.table.setRowCount(len(self.symbols))
+            for row, data in enumerate(self.symbols):
+                symbol = data["symbol"]
+                funding_rate = data["funding_rate"]
+                funding_time = data["funding_time"]
 
-                    # Час до наступної виплати
-                    funding_time = int(funding_data["fundingRateTimestamp"]) / 1000  # У секундах
-                    next_funding = datetime.fromtimestamp(funding_time) + timedelta(hours=8)
-                    time_diff = next_funding - datetime.now()
-                    hours, remainder = divmod(time_diff.seconds, 3600)
+                # Символ
+                self.table.setItem(row, 0, QTableWidgetItem(symbol))
+
+                # Відсоток фандингу
+                self.table.setItem(row, 1, QTableWidgetItem(f"{funding_rate:.4f}%"))
+
+                # Час до наступної виплати
+                next_funding = datetime.fromtimestamp(funding_time) + timedelta(hours=8)
+                time_diff = next_funding - datetime.now()
+                if time_diff.total_seconds() < 0:
+                    time_str = "N/A"  # Якщо час виплати минув
+                else:
+                    hours, remainder = divmod(int(time_diff.total_seconds()), 3600)
                     minutes, seconds = divmod(remainder, 60)
                     time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                    self.table.setItem(row, 2, QTableWidgetItem(time_str))
-                else:
-                    # Якщо помилка для конкретного символу
-                    self.table.setItem(row, 0, QTableWidgetItem(symbol))
-                    self.table.setItem(row, 1, QTableWidgetItem("N/A"))
-                    self.table.setItem(row, 2, QTableWidgetItem("N/A"))
+                self.table.setItem(row, 2, QTableWidgetItem(time_str))
+
+            # Заповнення порожніх рядків
+            for row in range(len(self.symbols), self.top_n):
+                self.table.setItem(row, 0, QTableWidgetItem("N/A"))
+                self.table.setItem(row, 1, QTableWidgetItem("N/A"))
+                self.table.setItem(row, 2, QTableWidgetItem("N/A"))
+
+            print("Table updated successfully")
 
         except Exception as e:
             print(f"Error updating funding data: {e}")
-            for row in range(len(self.symbols)):
-                self.table.setItem(row, 0, QTableWidgetItem(self.symbols[row]))
+            for row in range(self.top_n):
+                self.table.setItem(row, 0, QTableWidgetItem("Error"))
                 self.table.setItem(row, 1, QTableWidgetItem("Error"))
                 self.table.setItem(row, 2, QTableWidgetItem("Error"))
 
@@ -109,6 +159,7 @@ class FundingStatsApp(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
+    print("Starting application...")
     app = QApplication(sys.argv)
     window = FundingStatsApp()
     window.show()
