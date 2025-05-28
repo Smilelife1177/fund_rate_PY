@@ -1,9 +1,9 @@
 import os
 import logging
-from pybit.unified_trading import WebSocket
-from dotenv import load_dotenv
-import time
 import asyncio
+from datetime import datetime, timezone
+from pybit.unified_trading import HTTP
+from dotenv import load_dotenv
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,34 +16,22 @@ API_SECRET = os.getenv('BYBIT_API_SECRET')
 # Символ для торгівлі
 SYMBOL = 'BTCUSDT'
 
-# Ініціалізація WebSocket клієнта
-ws = WebSocket(
-    testnet=False,  # Встановіть True для тестування на Testnet
-    channel_type="linear",  # Для USDT-M ф’ючерсів
+# Час виплат funding rate (UTC)
+FUNDING_TIMES = [
+    (0, 0),  # 00:00 UTC
+    (8, 0),  # 08:00 UTC
+    (16, 0)  # 16:00 UTC
+]
+
+# Ініціалізація HTTP клієнта Bybit
+session = HTTP(
+    testnet=True,  # Змініть на False для реальної торгівлі
     api_key=API_KEY,
     api_secret=API_SECRET
 )
 
-# Функція обробки WebSocket повідомлень
-def handle_funding_rate_message(message):
-    try:
-        if 'data' in message and message['topic'] == f'publicTrade.{SYMBOL}':
-            # Bybit не передає funding rate напряму через publicTrade, тому використовуємо REST API для отримання funding rate
-            # Для прикладу, викликаємо REST API періодично
-            pass
-        else:
-            logging.debug(f"Received message: {message}")
-    except Exception as e:
-        logging.error(f"Error processing message: {e}")
-
-# Функція для отримання funding rate через REST API
+# Функція для отримання funding rate
 def get_funding_rate():
-    from pybit.unified_trading import HTTP
-    session = HTTP(
-        testnet=False,
-        api_key=API_KEY,
-        api_secret=API_SECRET
-    )
     try:
         response = session.get_funding_rate(symbol=SYMBOL)
         if response['retCode'] == 0:
@@ -64,13 +52,6 @@ def trade_logic(funding_rate):
 
         logging.info(f"Funding Rate for {SYMBOL}: {funding_rate*100:.4f}%")
 
-        from pybit.unified_trading import HTTP
-        session = HTTP(
-            testnet=False,
-            api_key=API_KEY,
-            api_secret=API_SECRET
-        )
-
         # Якщо funding rate > 0.05%, відкриваємо коротку позицію
         if funding_rate > 0.0005:  # 0.05%
             logging.info(f"High funding rate detected: {funding_rate*100:.4f}%. Opening SHORT position.")
@@ -80,7 +61,7 @@ def trade_logic(funding_rate):
                     symbol=SYMBOL,
                     side="Sell",
                     orderType="Market",
-                    qty=0.001,  # Розмір позиції (налаштуйте відповідно)
+                    qty=0.001,  # Розмір позиції (налаштуйте)
                     timeInForce="GTC"
                 )
                 logging.info(f"Short position opened: {order}")
@@ -104,19 +85,37 @@ def trade_logic(funding_rate):
     except Exception as e:
         logging.error(f"Error in trade_logic: {e}")
 
-# Асинхронна функція для періодичного отримання funding rate
+# Функція для перевірки, чи настав час для торгівлі
+def is_funding_time():
+    now = datetime.now(timezone.utc)
+    current_hour, current_minute, current_second = now.hour, now.minute, now.second
+    
+    # Перевіряємо, чи поточний час в межах ±30 секунд до виплати
+    for funding_hour, funding_minute in FUNDING_TIMES:
+        if current_hour == funding_hour and current_minute == funding_minute and 0 <= current_second <= 30:
+            return True
+    return False
+
+# Асинхронна функція для періодичної перевірки
 async def main_loop():
     while True:
-        funding_rate = get_funding_rate()
-        trade_logic(funding_rate)
-        await asyncio.sleep(300)  # Оновлення кожні 5 хвилин (funding rate оновлюється кожні 8 годин на Bybit)
+        if is_funding_time():
+            logging.info("Funding time detected! Checking funding rate...")
+            funding_rate = get_funding_rate()
+            trade_logic(funding_rate)
+        else:
+            now = datetime.now(timezone.utc)
+            logging.debug(f"Current time: {now.strftime('%H:%M:%S UTC')}. Waiting for funding time...")
+        
+        # Перевірка кожні 10 секунд, щоб не пропустити вікно
+        await asyncio.sleep(10)
 
 # Запуск програми
 if __name__ == "__main__":
     logging.info("Starting Bybit funding rate trading bot...")
-    
-    # Запуск WebSocket (для прикладу, хоча funding rate краще брати через REST)
-    ws.public_trade_stream(callback=handle_funding_rate_message, symbol=SYMBOL)
-    
-    # Запуск асинхронного циклу для перевірки funding rate
-    asyncio.run(main_loop())
+    try:
+        asyncio.run(main_loop())
+    except KeyboardInterrupt:
+        logging.info("Bot stopped by user.")
+    except Exception as e:
+        logging.error(f"Error in main loop: {e}")
