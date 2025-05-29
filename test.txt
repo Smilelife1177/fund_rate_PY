@@ -50,3 +50,7 @@ Processed ALEOUSDT: -0.1801%
 Processed ALGOUSDT: 0.0100%
 Processed ALICEUSDT: 0.0100%
 Processed ALPHAUSDT: 0.0050%
+
+
+
+![Alt text](images/example.jpg)

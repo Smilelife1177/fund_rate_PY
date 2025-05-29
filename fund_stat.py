@@ -1,6 +1,5 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QPushButton
-from PyQt6.QtCore import QTimer
 from pybit.unified_trading import HTTP
 from datetime import datetime, timedelta
 import time
@@ -8,11 +7,11 @@ import time
 class FundingStatsApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Bybit Funding Rates (Top 5 by Deviation)")
+        self.setWindowTitle("Bybit Funding Rates (Top 5 Active by Deviation)")
         self.setGeometry(100, 100, 600, 400)
 
-        # Ініціалізація клієнта Bybit
-        self.session = HTTP(testnet=False)  # Спробуйте testnet=False, якщо дані не повертаються
+        # Ініціалізація клієнта Bybit (основний API)
+        self.session = HTTP(testnet=False)  # Використовуємо основний API
 
         # Кількість пар для відображення
         self.top_n = 10
@@ -21,12 +20,7 @@ class FundingStatsApp(QMainWindow):
         # Налаштування інтерфейсу
         self.setup_ui()
 
-        # Таймер для автоматичного оновлення кожні 60 секунд
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_funding_data)
-        self.timer.start(60000)  # 60 секунд
-
-        # Початкове оновлення даних
+        # Початкове оновлення даних при запуску
         print("Initializing application...")
         self.update_funding_data()
 
@@ -64,14 +58,25 @@ class FundingStatsApp(QMainWindow):
                 print(f"Error fetching tickers: {response['retMsg']}")
                 return []
 
-            symbols = [item["symbol"] for item in response["result"]["list"] if item["symbol"].endswith("USDT")]
-            print(f"Found {len(symbols)} USDT pairs")
+            # Debug: Print response to inspect structure
+            # print(response["result"]["list"][:2])  # Print first two items for brevity
 
-            # Обмежуємо кількість пар для прискорення (наприклад, перші 50)
-            symbols = symbols[:50]  # Зменшуємо кількість запитів
+            # Filter USDT pairs with sufficient volume and turnover
+            min_volume = 100000
+            min_turnover = 1000000
+            symbols = [
+                item["symbol"] for item in response["result"]["list"]
+                if item["symbol"].endswith("USDT") and
+                float(item.get("volume24h", 0)) > min_volume and
+                float(item.get("turnover24h", 0)) > min_turnover
+            ]
+            print(f"Found {len(symbols)} active USDT pairs after filtering")
+
+            # Limit to 50 symbols
+            symbols = symbols[:10]
             print(f"Processing {len(symbols)} symbols for funding rates...")
 
-            # Отримання фандинг-рейтів
+            # Fetch funding rates
             funding_rates = []
             for i, symbol in enumerate(symbols):
                 try:
@@ -94,11 +99,10 @@ class FundingStatsApp(QMainWindow):
                         print(f"Error fetching funding rate for {symbol}: {response['retMsg']}")
                 except Exception as e:
                     print(f"Error fetching funding rate for {symbol}: {e}")
-                # Затримка для уникнення ліміту запитів
                 if i % 10 == 9:
-                    time.sleep(1)  # Затримка 1 секунда після кожних 10 запитів
+                    time.sleep(1)  # Delay after every 10 requests
 
-            # Сортування за абсолютним значенням фандинг-рейту
+            # Sort by absolute funding rate
             funding_rates.sort(key=lambda x: abs(x["funding_rate"]), reverse=True)
             top_symbols = funding_rates[:self.top_n]
             print(f"Top {self.top_n} symbols: {[item['symbol'] for item in top_symbols]}")
@@ -128,7 +132,7 @@ class FundingStatsApp(QMainWindow):
                 self.table.setItem(row, 1, QTableWidgetItem(f"{funding_rate:.4f}%"))
 
                 # Час до наступної виплати
-                next_funding = datetime.fromtimestamp(funding_time) + timedelta(hours=8)
+                next_funding = datetime.fromtimestamp(funding_time) + timedelta(hours=4)
                 time_diff = next_funding - datetime.now()
                 if time_diff.total_seconds() < 0:
                     time_str = "N/A"  # Якщо час виплати минув
@@ -154,7 +158,6 @@ class FundingStatsApp(QMainWindow):
                 self.table.setItem(row, 2, QTableWidgetItem("Error"))
 
     def closeEvent(self, event):
-        self.timer.stop()
         self.session.close()
         event.accept()
 
