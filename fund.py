@@ -18,14 +18,15 @@ class FundingStatsApp(QMainWindow):
 
         # Ініціалізація клієнта Bybit з API ключами
         self.session = HTTP(
-            testnet=True,
+            testnet=False,
             api_key=API_KEY,
             api_secret=API_SECRET
         )
 
-        # Вказана користувачем монета та інтервал фандингу
+        # Вказана користувачем монета та параметри угоди
         self.selected_symbol = "LPTUSDT"  # Змініть на потрібну монету
-        self.funding_interval_hours = 0.01  # Змініть на потрібний інтервал у годинах
+        self.funding_interval_hours = 1 ####  # Змініть на потрібний інтервал у годинах
+        self.trade_duration_ms = 2000  # Загальний час угоди в мілісекундах (наприклад, 15 секунд)
         self.funding_data = None
         self.open_order_id = None  # Для зберігання ID відкритого ордера
 
@@ -160,12 +161,12 @@ class FundingStatsApp(QMainWindow):
         print(f"Час до наступного фандингу для {symbol}: {time_str}")
 
         # Відкриття ордера за 5 секунд до фандингу
-        if 4 <= time_to_funding <= 5 and not self.open_order_id:
+        if 2 <= time_to_funding <= 3 and not self.open_order_id:
             side = "Sell" if funding_rate > 0 else "Buy"
             self.open_order_id = self.place_order(symbol, side, qty=1.0)
             if self.open_order_id:
-                # Запланувати закриття позиції через 10 секунд (5с до + 5с після)
-                QTimer.singleShot(10000, lambda: self.close_position(symbol, side) or setattr(self, 'open_order_id', None))
+                # Запланувати закриття позиції через заданий час угоди
+                QTimer.singleShot(self.trade_duration_ms, lambda: self.close_position(symbol, side) or setattr(self, 'open_order_id', None))
 
     def update_funding_data(self):
         try:
