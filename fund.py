@@ -26,7 +26,7 @@ class FundingStatsApp(QMainWindow):
         # Вказана користувачем монета та параметри угоди
         self.selected_symbol = "LPTUSDT"  # Змініть на потрібну монету
         self.funding_interval_hours = 1 ####  # Змініть на потрібний інтервал у годинах
-        self.trade_duration_ms = 2000  # Загальний час угоди в мілісекундах (наприклад, 15 секунд)
+        self.trade_duration_ms = 1000  # Загальний час угоди в мілісекундах (наприклад, 15 секунд)
         self.funding_data = None
         self.open_order_id = None  # Для зберігання ID відкритого ордера
 
@@ -161,7 +161,7 @@ class FundingStatsApp(QMainWindow):
         print(f"Час до наступного фандингу для {symbol}: {time_str}")
 
         # Відкриття ордера за 5 секунд до фандингу
-        if 2 <= time_to_funding <= 3 and not self.open_order_id:
+        if 1 <= time_to_funding <= 2 and not self.open_order_id:
             side = "Sell" if funding_rate > 0 else "Buy"
             self.open_order_id = self.place_order(symbol, side, qty=1.0)
             if self.open_order_id:

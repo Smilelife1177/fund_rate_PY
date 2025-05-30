@@ -4,3 +4,5 @@ GUI???
 )
 закриття / відкриття в час виплати
 
+
+!long/short after funding hours!
