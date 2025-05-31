@@ -2,6 +2,8 @@ Funding_rate_bot
 
 ![Alt text](images/example.jpg)
 
+## Tutorial
+
 Download GIT [Git download button](https://git-scm.com/downloads)
 
 Open cmd
