@@ -1,3 +1,4 @@
+# Bybit Funding Rate Monitor with PyQt6
 import os
 import sys
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QComboBox, QLabel
