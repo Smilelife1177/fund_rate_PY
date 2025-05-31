@@ -15,7 +15,7 @@ class FundingStatsApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Bybit Funding Rate Monitor")
-        self.setGeometry(100, 100, 400, 550)  # Збільшено розмір для нового віджета qty
+        self.setGeometry(100, 100, 400, 600)  # Збільшено висоту для нового віджета balance
 
         # Ініціалізація клієнта Bybit з API ключами
         self.session = HTTP(
@@ -59,13 +59,13 @@ class FundingStatsApp(QMainWindow):
         # Вибір монети
         self.coin_selector_label = QLabel("Виберіть монету:")
         self.coin_selector = QComboBox()
-        self.coins = ["OMGUSDT", "LPTUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]  # Список монет
+        self.coins = ["OMGUSDT", "LPTUSDT", "WCTUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]  # Список монет
         self.coin_selector.addItems(self.coins)
         self.coin_selector.setCurrentText(self.selected_symbol)
         self.coin_selector.currentTextChanged.connect(self.update_symbol)
 
         # Інтервал фандингу (години)
-        self.funding_interval_label = QLabel("Інтервал фандингу (години):")
+        self.funding_interval_label = QLabel("Інтервал фандингу 1, 4, 8 годин:")
         self.funding_interval_spinbox = QDoubleSpinBox()
         self.funding_interval_spinbox.setRange(0.1, 24.0)  # Від 0.1 до 24 годин
         self.funding_interval_spinbox.setValue(self.funding_interval_hours)
@@ -73,7 +73,7 @@ class FundingStatsApp(QMainWindow):
         self.funding_interval_spinbox.valueChanged.connect(self.update_funding_interval)
 
         # Час угоди (мс)
-        self.trade_duration_label = QLabel("Час угоди (мс):")
+        self.trade_duration_label = QLabel("Час угоди після фандингу (мс):")
         self.trade_duration_spinbox = QSpinBox()
         self.trade_duration_spinbox.setRange(500, 60000)  # Від 500 мс до 60 секунд
         self.trade_duration_spinbox.setValue(self.trade_duration_ms)
@@ -89,7 +89,7 @@ class FundingStatsApp(QMainWindow):
         self.take_profit_spinbox.valueChanged.connect(self.update_take_profit)
 
         # Час входження (секунди до фандингу)
-        self.entry_time_label = QLabel("Час входження (секунди до фандингу):")
+        self.entry_time_label = QLabel("(секунди до фандингу):")
         self.entry_time_spinbox = QDoubleSpinBox()
         self.entry_time_spinbox.setRange(0.5, 10.0)  # Від 0.5 до 10 секунд
         self.entry_time_spinbox.setValue(self.entry_time_seconds)
@@ -128,6 +128,9 @@ class FundingStatsApp(QMainWindow):
         # Мітка для відображення поточної ціни
         self.price_label = QLabel("Поточна ціна: N/A")
 
+        # Мітка для відображення балансу акаунту
+        self.balance_label = QLabel("Баланс акаунту: N/A")
+
         # Кнопка для оновлення даних
         self.refresh_button = QPushButton("Оновити дані")
         self.refresh_button.clicked.connect(self.update_funding_data)
@@ -151,6 +154,7 @@ class FundingStatsApp(QMainWindow):
         layout.addWidget(self.post_funding_trade_checkbox)
         layout.addWidget(self.funding_info_label)
         layout.addWidget(self.price_label)
+        layout.addWidget(self.balance_label)
         layout.addWidget(self.refresh_button)
         print("Налаштування інтерфейсу завершено")
 
@@ -195,6 +199,25 @@ class FundingStatsApp(QMainWindow):
     def update_post_funding_trade_enabled(self, state):
         self.enable_post_funding_trade = state == 2  # 2 = Qt.Checked
         print(f"Угода після фандингу {'увімкнена' if self.enable_post_funding_trade else 'вимкнена'}")
+
+    def get_account_balance(self):
+        try:
+            print("Отримання балансу акаунту...")
+            response = self.session.get_wallet_balance(
+                accountType="UNIFIED",
+                coin="USDT"
+            )
+            if response["retCode"] == 0 and response["result"]["list"]:
+                balance_data = response["result"]["list"][0]
+                balance = float(balance_data["coin"][0]["walletBalance"])
+                print(f"Баланс акаунту: {balance:.2f} USDT")
+                return balance
+            else:
+                print(f"Помилка отримання балансу: {response['retMsg']}")
+                return None
+        except Exception as e:
+            print(f"Помилка отримання балансу: {e}")
+            return None
 
     def get_funding_data(self):
         try:
@@ -354,6 +377,7 @@ class FundingStatsApp(QMainWindow):
             print("Дані фандингу відсутні")
             self.funding_info_label.setText("Ставка фандингу: N/A | Час до наступного фандингу: N/A")
             self.price_label.setText("Поточна ціна: N/A")
+            self.balance_label.setText("Баланс акаунту: N/A")
             return
 
         symbol = self.funding_data["symbol"]
@@ -386,6 +410,13 @@ class FundingStatsApp(QMainWindow):
             else:
                 self.price_label.setText("Поточна ціна: N/A")
 
+            # Оновлення балансу акаунту
+            balance = self.get_account_balance()
+            if balance is not None:
+                self.balance_label.setText(f"Баланс акаунту: ${balance:.2f} USDT")
+            else:
+                self.balance_label.setText("Баланс акаунту: N/A")
+
             if self.funding_data:
                 funding_rate = self.funding_data["funding_rate"]
                 funding_time = self.funding_data["funding_time"]
@@ -394,6 +425,7 @@ class FundingStatsApp(QMainWindow):
             else:
                 self.funding_info_label.setText("Ставка фандингу: N/A | Час до наступного фандингу: N/A")
                 self.price_label.setText("Поточна ціна: N/A")
+                self.balance_label.setText("Баланс акаунту: N/A")
 
             print("Дані успішно оновлено")
 
@@ -401,6 +433,7 @@ class FundingStatsApp(QMainWindow):
             print(f"Помилка оновлення даних фандингу: {e}")
             self.funding_info_label.setText("Ставка фандингу: Помилка | Час до наступного фандингу: Помилка")
             self.price_label.setText("Поточна ціна: Помилка")
+            self.balance_label.setText("Баланс акаунту: Помилка")
 
     def closeEvent(self, event):
         self.timer.stop()
