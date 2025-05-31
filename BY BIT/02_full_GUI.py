@@ -26,7 +26,7 @@ class FundingStatsApp(QMainWindow):
 
         # Початкові параметри угоди
         self.selected_symbol = "OMGUSDT"  # Початкова монета
-        self.funding_interval_hours = 1  # Початковий інтервал фандингу (години)
+        self.funding_interval_hours = 8  # Початковий інтервал фандингу (години)
         self.trade_duration_ms = 500  # Початковий час угоди (мс)
         self.take_profit_percent = 1.0  # Початковий тейк-профіт (%)
         self.entry_time_seconds = 1.0 ###  # Початковий час входження (секунди до фандингу)

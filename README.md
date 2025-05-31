@@ -2,27 +2,41 @@ Funding_rate_bot
 
 ![Alt text](images/example.jpg)
 
+Download GIT [https://git-scm.com/downloads]()
 
-Як змінити параметри
-Час входження фандингової угоди:
-Змініть умову в check_funding_time. Наприклад, для відкриття за 5 секунд до фандингу:
-python
+Open cmd
 
-Копіювати
-if 4 <= time_to_funding <= 5 and not self.open_funding_order_id:
-Час фандингової угоди:
-Змініть self.trade_duration_ms у __init__. Наприклад, для 10 секунд:
-python
+```
+cd Desktop
+git clone https://github.com/Smilelife1177/fund_rate_PY.git
 
-Копіювати
-self.trade_duration_ms = 10000  # 10 секунд
-Тейк-профіт:
-Змініть self.take_profit_percent у __init__. Наприклад, для 2%:
-python
+```
 
-Копіювати
-self.take_profit_percent = 2.0
-Округлення тейк-профіту (round(take_profit, 2)) можна змінити залежно від монети (наприклад, 3 для вищої точності).
-Монета та інтервал фандингу:
-Змініть self.selected_symbol = "LPTUSDT" на потрібну монету (наприклад, "BTCUSDT").
-Змініть self.funding_interval_hours = 1 на 8 для реального розкладу Bybit.
+Open vscode /or smthing else\
+Open folder on desktop called "FOUND_RATE_PY"
+
+If you not have python download it [https://www.python.org/downloads/]()
+
+**3.10+ pls**
+
+In vscode you can open terminal in bottom
+
+To download needed libraries enter that command in cmd
+
+```
+pip install -r requirements.txt
+```
+
+In folders chose your exchange 
+
+And run code by pressing "F5"
+
+## Credits
+
+Lead Developer - Oleg Shapran (@Smilelife1177) (shapran1177@gmail.com)
+
+## License
+
+The MIT License (MIT)
+
+Copyright (c) 2025 Oleg Shapran
