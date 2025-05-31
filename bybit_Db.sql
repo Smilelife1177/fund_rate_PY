@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     user_id BIGINT PRIMARY KEY,
     api_key VARCHAR(255),
     api_secret VARCHAR(255),
+    phone_number VARCHAR(50), -- Додано поле для номера телефону
     selected_symbol VARCHAR(50) DEFAULT 'BTCUSDT',
     funding_interval_hours DOUBLE DEFAULT 8.0,
     trade_duration_ms INT DEFAULT 2000,

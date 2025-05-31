@@ -1,8 +1,10 @@
+import os
+import dotenv
 import asyncio
 import aiomysql
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from pybit.unified_trading import HTTP
 from datetime import datetime, timedelta, timezone
 import logging
@@ -12,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Ініціалізація бота
-BOT_TOKEN = "YOUR_BOT_TOKEN"  # Замініть на ваш токен від @BotFather
+BOT_TOKEN = os.getenv('YOUR_BOT_TOKEN')  # Замініть на ваш токен від @BotFather
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -20,13 +22,20 @@ dp = Dispatcher()
 DB_CONFIG = {
     "host": "localhost",
     "port": 3306,
-    "user": "your_mysql_user",  # Замініть на вашого користувача MySQL
-    "password": "your_mysql_password",  # Замініть на ваш пароль MySQL
+    "user": "root",  # Замініть на вашого користувача MySQL
+    "password": "1212",  # Замініть на ваш пароль MySQL
     "db": "bybit_funding"
 }
 
 # Список доступних монет
 COINS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "BNBUSDT"]
+
+# Клавіатура для запиту номера телефону
+phone_keyboard = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="Поділитися номером телефону", request_contact=True)]],
+    resize_keyboard=True,
+    one_time_keyboard=True
+)
 
 # Клас для управління даними користувача та торгівлею
 class UserFundingBot:
@@ -34,6 +43,7 @@ class UserFundingBot:
         self.user_id = user_id
         self.api_key = None
         self.api_secret = None
+        self.phone_number = None
         self.session = None
         self.funding_data = None
         self.open_funding_order_id = None
@@ -56,21 +66,32 @@ class UserFundingBot:
                 if row:
                     self.api_key = row[1]
                     self.api_secret = row[2]
-                    self.selected_symbol = row[3]
-                    self.funding_interval_hours = row[4]
-                    self.trade_duration_ms = row[5]
-                    self.take_profit_percent = row[6]
-                    self.entry_time_seconds = row[7]
-                    self.leverage = row[8]
-                    self.qty = row[9]
-                    self.enable_funding_trade = bool(row[10])
-                    self.enable_post_funding_trade = bool(row[11])
+                    self.phone_number = row[3]
+                    self.selected_symbol = row[4]
+                    self.funding_interval_hours = row[5]
+                    self.trade_duration_ms = row[6]
+                    self.take_profit_percent = row[7]
+                    self.entry_time_seconds = row[8]
+                    self.leverage = row[9]
+                    self.qty = row[10]
+                    self.enable_funding_trade = bool(row[11])
+                    self.enable_post_funding_trade = bool(row[12])
+                    logger.info(f"Завантажено дані для user_id {self.user_id}: api_key={self.api_key}, api_secret={'***' if self.api_secret else None}")
                     if self.api_key and self.api_secret:
-                        self.session = HTTP(
-                            testnet=False,
-                            api_key=self.api_key,
-                            api_secret=self.api_secret
-                        )
+                        try:
+                            self.session = HTTP(
+                                testnet=False,
+                                api_key=self.api_key,
+                                api_secret=self.api_secret
+                            )
+                            logger.info(f"Сесію Bybit для user_id {self.user_id} ініціалізовано")
+                        except Exception as e:
+                            logger.error(f"Помилка ініціалізації сесії Bybit для user_id {self.user_id}: {e}")
+                            self.session = None
+                    else:
+                        logger.warning(f"API-ключі відсутні для user_id {self.user_id}")
+                else:
+                    logger.info(f"Дані для user_id {self.user_id} не знайдено в базі")
                 return row is not None
 
     async def save_user_data(self):
@@ -78,19 +99,19 @@ class UserFundingBot:
             async with db.cursor() as cursor:
                 await cursor.execute('''
                     INSERT INTO users (
-                        user_id, api_key, api_secret, selected_symbol, funding_interval_hours,
+                        user_id, api_key, api_secret, phone_number, selected_symbol, funding_interval_hours,
                         trade_duration_ms, take_profit_percent, entry_time_seconds, leverage,
                         qty, enable_funding_trade, enable_post_funding_trade
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
-                        api_key = %s, api_secret = %s, selected_symbol = %s, funding_interval_hours = %s,
+                        api_key = %s, api_secret = %s, phone_number = %s, selected_symbol = %s, funding_interval_hours = %s,
                         trade_duration_ms = %s, take_profit_percent = %s, entry_time_seconds = %s,
                         leverage = %s, qty = %s, enable_funding_trade = %s, enable_post_funding_trade = %s
                 ''', (
-                    self.user_id, self.api_key, self.api_secret, self.selected_symbol, self.funding_interval_hours,
+                    self.user_id, self.api_key, self.api_secret, self.phone_number, self.selected_symbol, self.funding_interval_hours,
                     self.trade_duration_ms, self.take_profit_percent, self.entry_time_seconds, self.leverage,
                     self.qty, self.enable_funding_trade, self.enable_post_funding_trade,
-                    self.api_key, self.api_secret, self.selected_symbol, self.funding_interval_hours,
+                    self.api_key, self.api_secret, self.phone_number, self.selected_symbol, self.funding_interval_hours,
                     self.trade_duration_ms, self.take_profit_percent, self.entry_time_seconds, self.leverage,
                     self.qty, self.enable_funding_trade, self.enable_post_funding_trade
                 ))
@@ -258,6 +279,36 @@ class UserFundingBot:
         minutes, seconds = divmod(remainder, 60)
         return time_diff.total_seconds(), f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
+##
+    async def check_funding_time(self):
+        if not self.funding_data:
+            logger.info("Дані фандингу відсутні")
+            return
+        symbol = self.funding_data["symbol"]
+        funding_rate = self.funding_data["funding_rate"]
+        funding_time = self.funding_data["funding_time"]
+        time_to_funding, time_str = self.get_next_funding_time(funding_time)
+        logger.info(f"Час до наступного фандингу для {symbol}: {time_str}")
+        if self.enable_funding_trade:
+            entry_window_start = self.entry_time_seconds - 1.0
+            if entry_window_start <= time_to_funding <= self.entry_time_seconds and not self.open_funding_order_id:
+                side = "Sell" if funding_rate > 0 else "Buy"
+                self.open_funding_order_id = await self.place_order(side, self.qty)
+                if self.open_funding_order_id:
+                    asyncio.get_event_loop().call_later(
+                        self.trade_duration_ms / 1000,
+                        lambda: asyncio.create_task(self.close_position(side) or setattr(self, 'open_funding_order_id', None))
+                    )
+##
+async def send_message(self, message_text, reply_markup=None):
+    try:
+        await bot.send_message(self.user_id, message_text, reply_markup=reply_markup)
+    except Exception as e:
+        logger.error(f"Помилка надсилання повідомлення користувачу {self.user_id}: {e}")
+
+# Додаємо метод send_message до класу
+UserFundingBot.send_message = send_message
+
 # Словник для зберігання екземплярів бота для кожного користувача
 user_bots = {}
 
@@ -281,18 +332,49 @@ def get_coin_menu():
     ])
     return keyboard
 
+# Перевірка наявності номера телефону
+async def check_phone_number(bot_instance, message):
+    if not bot_instance.phone_number:
+        await message.reply("Будь ласка, поділіться номером телефону для продовження.", reply_markup=phone_keyboard)
+        return False
+    return True
+
+##
+async def check_api_keys(bot_instance, message):
+    if not bot_instance.api_key or not bot_instance.api_secret or not bot_instance.session:
+        await message.reply("Будь ласка, встановіть API-ключі за допомогою команди: /setkeys <api_key> <api_secret>", reply_markup=get_main_menu())
+        return False
+    return True
+##
+# Обробник контакту (номера телефону)
+@dp.message(lambda message: message.contact)
+async def process_contact(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in user_bots:
+        user_bots[user_id] = UserFundingBot(user_id)
+    bot_instance = user_bots[user_id]
+    bot_instance.phone_number = message.contact.phone_number
+    await bot_instance.save_user_data()
+    await message.reply(
+        f"Номер телефону {message.contact.phone_number} збережено!\n"
+        "Тепер встановіть API ключі: /setkeys <api_key> <api_secret>",
+        reply_markup=get_main_menu()
+    )
+
 # Команда /start
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     user_bots[user_id] = UserFundingBot(user_id)
-    if not await user_bots[user_id].load_user_data():
-        await user_bots[user_id].save_user_data()
-    await message.reply(
-        "Вітаю! Це бот для моніторингу фандингу Bybit.\n"
-        "Встановіть API ключі: /setkeys <api_key> <api_secret>\n"
-        "Використовуйте меню нижче для керування:", reply_markup=get_main_menu()
-    )
+    await user_bots[user_id].load_user_data()
+    if not user_bots[user_id].phone_number:
+        await message.reply("Будь ласка, поділіться номером телефону для початку роботи.", reply_markup=phone_keyboard)
+    else:
+        await message.reply(
+            "Вітаю! Це бот для моніторингу фандингу Bybit.\n"
+            "Встановіть API ключі: /setkeys <api_key> <api_secret>\n"
+            "Використовуйте меню нижче для керування:", reply_markup=get_main_menu()
+        )
 
 # Команда /setkeys
 @dp.message(Command("setkeys"))
@@ -300,15 +382,24 @@ async def cmd_setkeys(message: types.Message):
     user_id = message.from_user.id
     if user_id not in user_bots:
         user_bots[user_id] = UserFundingBot(user_id)
+    bot_instance = user_bots[user_id]
+    if not await check_phone_number(bot_instance, message):
+        return
+    if bot_instance.api_key and bot_instance.api_secret and bot_instance.session:
+        await message.reply("API-ключі вже встановлено! Використовуйте меню для керування.", reply_markup=get_main_menu())
+        return
     args = message.text.split()
     if len(args) != 3:
-        await message.reply("Використовуйте: /setkeys <api_key> <api_secret>")
+        await message.reply("Використовуйте: /setkeys <api_key> <api_secret>", reply_markup=get_main_menu())
         return
-    user_bots[user_id].api_key = args[1]
-    user_bots[user_id].api_secret = args[2]
-    await user_bots[user_id].save_user_data()
-    await user_bots[user_id].load_user_data()
-    await message.reply("API ключі збережено!", reply_markup=get_main_menu())
+    bot_instance.api_key = args[1]
+    bot_instance.api_secret = args[2]
+    await bot_instance.save_user_data()
+    await bot_instance.load_user_data()
+    if bot_instance.session:
+        await message.reply("API-ключі збережено та сесію ініціалізовано!", reply_markup=get_main_menu())
+    else:
+        await message.reply("Помилка ініціалізації API-ключів. Перевірте їх правильність.", reply_markup=get_main_menu())
 
 # Команда /settings
 @dp.message(Command("settings"))
@@ -317,37 +408,39 @@ async def cmd_settings(message: types.Message):
     if user_id not in user_bots:
         await message.reply("Спочатку виконайте /start")
         return
-    bot = user_bots[user_id]
+    bot_instance = user_bots[user_id]
+    if not await check_phone_number(bot_instance, message):
+        return
     args = message.text.split()
     if len(args) == 1:
         await message.reply(
             f"Поточні налаштування:\n"
-            f"Монета: {bot.selected_symbol}\n"
-            f"Інтервал фандингу: {bot.funding_interval_hours} годин\n"
-            f"Час угоди: {bot.trade_duration_ms} мс\n"
-            f"Тейк-профіт: {bot.take_profit_percent}%\n"
-            f"Час входження: {bot.entry_time_seconds} секунд\n"
-            f"Плече: {bot.leverage}x\n"
-            f"Кількість: {bot.qty}\n"
-            f"Фандингова угода: {'увімкнена' if bot.enable_funding_trade else 'вимкнена'}\n"
-            f"Угода після фандингу: {'увімкнена' if bot.enable_post_funding_trade else 'вимкнена'}\n"
+            f"Монета: {bot_instance.selected_symbol}\n"
+            f"Інтервал фандингу: {bot_instance.funding_interval_hours} годин\n"
+            f"Час угоди: {bot_instance.trade_duration_ms} мс\n"
+            f"Тейк-профіт: {bot_instance.take_profit_percent}%\n"
+            f"Час входження: {bot_instance.entry_time_seconds} секунд\n"
+            f"Плече: {bot_instance.leverage}x\n"
+            f"Кількість: {bot_instance.qty}\n"
+            f"Фандингова угода: {'увімкнена' if bot_instance.enable_funding_trade else 'вимкнена'}\n"
+            f"Угода після фандингу: {'увімкнена' if bot_instance.enable_post_funding_trade else 'вимкнена'}\n"
             "Щоб змінити, використовуйте: /settings <symbol> <funding_interval> <trade_duration> <take_profit> <entry_time> <leverage> <qty>",
             reply_markup=get_main_menu()
         )
         return
     if len(args) != 8:
-        await message.reply("Використовуйте: /settings <symbol> <funding_interval> <trade_duration> <take_profit> <entry_time> <leverage> <qty>")
+        await message.reply("Використовуйте: /settings <symbol> <funding_interval> <trade_duration> <take_profit> <entry_time> <leverage> <qty>", reply_markup=get_main_menu())
         return
     try:
-        bot.selected_symbol = args[1].upper()
-        bot.funding_interval_hours = float(args[2])
-        bot.trade_duration_ms = int(args[3])
-        bot.take_profit_percent = float(args[4])
-        bot.entry_time_seconds = float(args[5])
-        bot.leverage = int(args[6])
-        bot.qty = float(args[7])
-        await bot.save_user_data()
-        await bot.get_funding_data()
+        bot_instance.selected_symbol = args[1].upper()
+        bot_instance.funding_interval_hours = float(args[2])
+        bot_instance.trade_duration_ms = int(args[3])
+        bot_instance.take_profit_percent = float(args[4])
+        bot_instance.entry_time_seconds = float(args[5])
+        bot_instance.leverage = int(args[6])
+        bot_instance.qty = float(args[7])
+        await bot_instance.save_user_data()
+        await bot_instance.get_funding_data()
         await message.reply("Налаштування оновлено!", reply_markup=get_main_menu())
     except ValueError:
         await message.reply("Невірний формат параметрів!", reply_markup=get_main_menu())
@@ -359,17 +452,21 @@ async def cmd_status(message: types.Message):
     if user_id not in user_bots:
         await message.reply("Спочатку виконайте /start")
         return
-    bot = user_bots[user_id]
-    if not bot.funding_data:
-        await bot.get_funding_data()
-    if bot.funding_data:
-        funding_rate = bot.funding_data["funding_rate"]
-        funding_time = bot.funding_data["funding_time"]
-        _, time_str = bot.get_next_funding_time(funding_time)
-        price = await bot.get_current_price()
+    bot_instance = user_bots[user_id]
+    if not await check_phone_number(bot_instance, message):
+        return
+    if not await check_api_keys(bot_instance, message):
+        return
+    if not bot_instance.funding_data:
+        await bot_instance.get_funding_data()
+    if bot_instance.funding_data:
+        funding_rate = bot_instance.funding_data["funding_rate"]
+        funding_time = bot_instance.funding_data["funding_time"]
+        _, time_str = bot_instance.get_next_funding_time(funding_time)
+        price = await bot_instance.get_current_price()
         price_str = f"${price:.2f}" if price else "N/A"
         await message.reply(
-            f"Монета: {bot.selected_symbol}\n"
+            f"Монета: {bot_instance.selected_symbol}\n"
             f"Ставка фандингу: {funding_rate:.4f}%\n"
             f"Час до наступного фандингу: {time_str}\n"
             f"Поточна ціна: {price_str}",
@@ -383,9 +480,18 @@ async def cmd_status(message: types.Message):
 async def process_callback(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     if user_id not in user_bots:
-        await callback.message.reply("Спочатку виконайте /start")
+        logger.info(f"Користувач {user_id} відсутній у user_bots, ініціалізуємо...")
+        user_bots[user_id] = UserFundingBot(user_id)
+        await user_bots[user_id].load_user_data()
+    bot_instance = user_bots[user_id]
+    logger.info(f"Обробка callback для user_id {user_id}, phone_number={bot_instance.phone_number}")
+    if not bot_instance.phone_number:
+        await callback.message.reply("Будь ласка, поділіться номером телефону для продовження.", reply_markup=phone_keyboard)
+        await callback.answer()
         return
-    bot = user_bots[user_id]
+    if not await check_api_keys(bot_instance, callback.message):
+        await callback.answer()
+        return
     data = callback.data
 
     if data == "status":
@@ -393,58 +499,53 @@ async def process_callback(callback: types.CallbackQuery):
     elif data == "settings":
         await cmd_settings(callback.message)
     elif data == "enable_trade":
-        bot.enable_funding_trade = True
-        await bot.save_user_data()
+        bot_instance.enable_funding_trade = True
+        await bot_instance.save_user_data()
         await callback.message.reply("Фандингова угода увімкнена", reply_markup=get_main_menu())
-    elif data == " disable_trade":
-        bot.enable_funding_trade = False
-        await bot.save_user_data()
+    elif data == "disable_trade":
+        bot_instance.enable_funding_trade = False
+        await bot_instance.save_user_data()
         await callback.message.reply("Фандингова угода вимкнена", reply_markup=get_main_menu())
     elif data == "enable_post_trade":
-        bot.enable_post_funding_trade = True
-        await bot.save_user_data()
+        bot_instance.enable_post_funding_trade = True
+        await bot_instance.save_user_data()
         await callback.message.reply("Угода після фандингу увімкнена", reply_markup=get_main_menu())
     elif data == "disable_post_trade":
-        bot.enable_post_funding_trade = False
-        await bot.save_user_data()
+        bot_instance.enable_post_funding_trade = False
+        await bot_instance.save_user_data()
         await callback.message.reply("Угода після фандингу вимкнена", reply_markup=get_main_menu())
     elif data == "select_coin":
         await callback.message.reply("Виберіть монету:", reply_markup=get_coin_menu())
     elif data.startswith("coin_"):
         coin = data.split("_")[1]
-        bot.selected_symbol = coin
-        await bot.save_user_data()
-        await bot.get_funding_data()
+        bot_instance.selected_symbol = coin
+        await bot_instance.save_user_data()
+        await bot_instance.get_funding_data()
         await callback.message.reply(f"Вибрано монету: {coin}", reply_markup=get_main_menu())
     await callback.answer()
 
 # Фонова задача для перевірки часу фандингу
 async def check_funding_loop():
     while True:
-        for user_id, bot in user_bots.items():
-            await bot.check_funding_time()
-            if bot.funding_data and bot.enable_funding_trade:
-                funding_rate = bot.funding_data["funding_rate"]
-                time_to_funding, _ = bot.get_next_funding_time(bot.funding_data["funding_time"])
-                if bot.entry_time_seconds - 1.0 <= time_to_funding <= bot.entry_time_seconds:
-                    await bot.send_message(f"Відкрито угоду для {bot.selected_symbol} (ставка: {funding_rate:.4f}%)")
+        for user_id, bot_instance in user_bots.items():
+            if bot_instance.phone_number:  # Перевірка наявності номера телефону
+                await bot_instance.check_funding_time()
+                if bot_instance.funding_data and bot_instance.enable_funding_trade:
+                    funding_rate = bot_instance.funding_data["funding_rate"]
+                    time_to_funding, _ = bot_instance.get_next_funding_time(bot_instance.funding_data["funding_time"])
+                    if bot_instance.entry_time_seconds - 1.0 <= time_to_funding <= bot_instance.entry_time_seconds:
+                        await bot_instance.send_message(
+                            f"Відкрито угоду для {bot_instance.selected_symbol} (ставка: {funding_rate:.4f}%)",
+                            reply_markup=get_main_menu()
+                        )
         await asyncio.sleep(1)
 
-# Надсилання сповіщень користувачу
-async def send_message(self, message_text):
-    try:
-        await bot.send_message(self.user_id, message_text, reply_markup=get_main_menu())
-    except Exception as e:
-        logger.error(f"Помилка надсилання повідомлення користувачу {self.user_id}: {e}")
-
-UserFundingBot.send_message = send_message
-
 async def main():
-    # Ініціалізація пулу підключень до MySQL
     async with aiomysql.create_pool(**DB_CONFIG) as pool:
         async with pool.acquire() as db:
             async with db.cursor() as cursor:
                 await cursor.execute("SELECT 1")  # Перевірка підключення
+        asyncio.create_task(check_funding_loop())
         await dp.start_polling(bot)
 
 if __name__ == "__main__":
