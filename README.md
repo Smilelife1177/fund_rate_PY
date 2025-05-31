@@ -9,7 +9,6 @@ Open cmd
 ```
 cd Desktop
 git clone https://github.com/Smilelife1177/fund_rate_PY.git
-
 ```
 
 Open vscode /or smthing else
