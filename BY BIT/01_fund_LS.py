@@ -1,4 +1,3 @@
-# Bybit Funding Rate Monitor with PyQt6
 import os
 import sys
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QComboBox, QLabel
@@ -26,10 +25,12 @@ class FundingStatsApp(QMainWindow):
 
         # Вказана користувачем монета та параметри угоди
         self.selected_symbol = "LPTUSDT"  # Змініть на потрібну монету
-        self.funding_interval_hours = 1 ####  # Змініть на потрібний інтервал у годинах
-        self.trade_duration_ms = 1000  # Загальний час угоди в мілісекундах (наприклад, 15 секунд)
+        self.funding_interval_hours = 1  # Змініть на 8 для реального розкладу Bybit (00:00, 08:00, 16:00 UTC)
+        self.trade_duration_ms = 1000  # Загальний час фандингової угоди в мілісекундах (наприклад, 1 секунда)
+        self.take_profit_percent = 1.0  # Тейк-профіт для нової позиції: 1% руху ціни
         self.funding_data = None
-        self.open_order_id = None  # Для зберігання ID відкритого ордера
+        self.open_funding_order_id = None  # Для зберігання ID фандингового ордера
+        self.open_post_funding_order_id = None  # Для зберігання ID позиції після фандингу
 
         # Налаштування інтерфейсу
         self.setup_ui()
@@ -93,6 +94,21 @@ class FundingStatsApp(QMainWindow):
             print(f"Помилка отримання ставки фандингу для {self.selected_symbol}: {e}")
             return None
 
+    def get_current_price(self, symbol):
+        try:
+            print(f"Отримання поточної ціни для {symbol}...")
+            response = self.session.get_tickers(category="linear", symbol=symbol)
+            if response["retCode"] == 0 and response["result"]["list"]:
+                price = float(response["result"]["list"][0]["lastPrice"])
+                print(f"Поточна ціна {symbol}: {price}")
+                return price
+            else:
+                print(f"Помилка отримання ціни для {symbol}: {response['retMsg']}")
+                return None
+        except Exception as e:
+            print(f"Помилка отримання ціни для {symbol}: {e}")
+            return None
+
     def get_next_funding_time(self, funding_time):
         funding_dt = datetime.fromtimestamp(funding_time, tz=timezone.utc)
         current_time = datetime.now(timezone.utc)
@@ -105,17 +121,20 @@ class FundingStatsApp(QMainWindow):
         minutes, seconds = divmod(remainder, 60)
         return time_diff.total_seconds(), f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def place_order(self, symbol, side, qty=1.0):
+    def place_order(self, symbol, side, qty=1.0, take_profit=None):
         try:
-            print(f"Розміщення ордера {side} для {symbol} з кількістю {qty}...")
-            response = self.session.place_order(
-                category="linear",
-                symbol=symbol,
-                side=side,
-                orderType="Market",
-                qty=qty,
-                timeInForce="GTC"
-            )
+            print(f"Розміщення ордера {side} для {symbol} з кількістю {qty} і тейк-профітом {take_profit}...")
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "side": side,
+                "orderType": "Market",
+                "qty": str(qty),  # Bybit API вимагає qty як string
+                "timeInForce": "GTC"
+            }
+            if take_profit is not None:
+                params["takeProfit"] = str(take_profit)  # Bybit API вимагає takeProfit як string
+            response = self.session.place_order(**params)
             if response["retCode"] == 0:
                 print(f"Ордер успішно розміщено: {response['result']}")
                 return response["result"]["orderId"]
@@ -142,10 +161,35 @@ class FundingStatsApp(QMainWindow):
             )
             if response["retCode"] == 0:
                 print(f"Позицію успішно закрито: {response['result']}")
+                # Відкриваємо нову позицію після закриття фандингової
+                self.open_post_funding_position(symbol)
             else:
                 print(f"Помилка закриття позиції для {symbol}: {response['retMsg']}")
         except Exception as e:
             print(f"Помилка закриття позиції для {symbol}: {e}")
+
+    def open_post_funding_position(self, symbol):
+        if not self.funding_data:
+            print("Дані фандингу відсутні для відкриття позиції після фандингу")
+            return
+
+        funding_rate = self.funding_data["funding_rate"]
+        # Визначаємо сторону для нової позиції: шорт при мінусовому фандингу, лонг при плюсовому
+        side = "Sell" if funding_rate < 0 else "Buy"
+
+        # Отримуємо поточну ринкову ціну
+        current_price = self.get_current_price(symbol)
+        if current_price is None:
+            print(f"Не вдалося отримати ціну для {symbol}, пропускаємо відкриття позиції")
+            return
+
+        # Розраховуємо тейк-профіт: +1% для лонгу, -1% для шорту
+        take_profit = current_price * (1 + 0.01) if side == "Buy" else current_price * (1 - 0.01)
+        # Округляємо тейк-профіт до 2 знаків після коми (залежить від монети)
+        take_profit = round(take_profit, 3)
+
+        # Відкриваємо нову позицію з тейк-профітом
+        self.open_post_funding_order_id = self.place_order(symbol, side, qty=1.0, take_profit=take_profit)
 
     def check_funding_time(self):
         if not self.funding_data:
@@ -161,13 +205,13 @@ class FundingStatsApp(QMainWindow):
         self.funding_info_label.setText(f"Ставка фандингу: {funding_rate:.4f}% | Час до наступного фандингу: {time_str}")
         print(f"Час до наступного фандингу для {symbol}: {time_str}")
 
-        # Відкриття ордера за 5 секунд до фандингу
-        if 1 <= time_to_funding <= 2 and not self.open_order_id:
+        # Відкриття фандингового ордера за 1-2 секунди до фандингу
+        if 1 <= time_to_funding <= 2 and not self.open_funding_order_id:
             side = "Sell" if funding_rate > 0 else "Buy"
-            self.open_order_id = self.place_order(symbol, side, qty=1.0)
-            if self.open_order_id:
-                # Запланувати закриття позиції через заданий час угоди
-                QTimer.singleShot(self.trade_duration_ms, lambda: self.close_position(symbol, side) or setattr(self, 'open_order_id', None))
+            self.open_funding_order_id = self.place_order(symbol, side, qty=1.0)
+            if self.open_funding_order_id:
+                # Запланувати закриття фандингової позиції через заданий час
+                QTimer.singleShot(self.trade_duration_ms, lambda: self.close_position(symbol, side) or setattr(self, 'open_funding_order_id', None))
 
     def update_funding_data(self):
         try:
