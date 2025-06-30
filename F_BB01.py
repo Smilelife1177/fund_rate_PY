@@ -1,7 +1,7 @@
 import os
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QComboBox, QLabel, QDoubleSpinBox
-from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QComboBox, QLabel, QDoubleSpinBox, QSlider
+from PyQt6.QtCore import QTimer, Qt
 from pybit.unified_trading import HTTP
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
@@ -17,16 +17,17 @@ class FundingTraderApp(QMainWindow):
 
         # Initialize Bybit client
         self.session = HTTP(
-            testnet=True,
+            testnet=False,
             api_key=API_KEY,
             api_secret=API_SECRET
         )
 
         # Trading parameters
-        self.selected_symbol = "BTCUSDT"
-        self.funding_interval_hours = 0.01  # Bybit funding interval
+        self.selected_symbol = "BTCUSDT" 
+        self.funding_interval_hours = 1.0  # Bybit funding interval
         self.entry_time_seconds = 5.0  # Time before funding to enter
-        self.qty = 0.01  # Order quantity
+        self.qty = 0.1  # Order quantity
+        self.profit_percentage = 1.0  # Desired profit percentage
         self.funding_data = None
         self.open_order_id = None
         self.funding_time_price = None
@@ -52,7 +53,7 @@ class FundingTraderApp(QMainWindow):
         # Coin selector
         self.coin_selector_label = QLabel("Select Coin:")
         self.coin_selector = QComboBox()
-        self.coins = ["BTCUSDT", "LPTUSDT", "INJUSDT", "XRPUSDT", "XEMUSDT"]
+        self.coins = ["BTCUSDT", "XEMUSDT", "INJUSDT", "XRPUSDT", "XEMUSDT"]
         self.coin_selector.addItems(self.coins)
         self.coin_selector.setCurrentText(self.selected_symbol)
         self.coin_selector.currentTextChanged.connect(self.update_symbol)
@@ -81,6 +82,21 @@ class FundingTraderApp(QMainWindow):
         self.qty_spinbox.setSingleStep(0.001)
         self.qty_spinbox.valueChanged.connect(self.update_qty)
 
+        # Profit percentage
+        self.profit_percentage_label = QLabel("Desired Profit Percentage (%):")
+        self.profit_percentage_spinbox = QDoubleSpinBox()
+        self.profit_percentage_spinbox.setRange(0.1, 10.0)
+        self.profit_percentage_spinbox.setValue(self.profit_percentage)
+        self.profit_percentage_spinbox.setSingleStep(0.1)
+        self.profit_percentage_spinbox.valueChanged.connect(self.update_profit_percentage)
+
+        # Profit percentage slider
+        self.profit_percentage_slider = QSlider(Qt.Orientation.Horizontal)
+        self.profit_percentage_slider.setRange(10, 1000)  # 0.1% to 10.0% (multiplied by 100 for integer steps)
+        self.profit_percentage_slider.setValue(int(self.profit_percentage * 100))
+        self.profit_percentage_slider.setSingleStep(10)  # 0.1% steps
+        self.profit_percentage_slider.valueChanged.connect(self.update_profit_percentage_from_slider)
+
         # Display labels
         self.funding_info_label = QLabel("Funding Rate: N/A | Time to Next Funding: N/A")
         self.price_label = QLabel("Current Price: N/A")
@@ -99,6 +115,9 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.entry_time_spinbox)
         layout.addWidget(self.qty_label)
         layout.addWidget(self.qty_spinbox)
+        layout.addWidget(self.profit_percentage_label)
+        layout.addWidget(self.profit_percentage_spinbox)
+        layout.addWidget(self.profit_percentage_slider)
         layout.addWidget(self.funding_info_label)
         layout.addWidget(self.price_label)
         layout.addWidget(self.balance_label)
@@ -122,6 +141,16 @@ class FundingTraderApp(QMainWindow):
     def update_qty(self, value):
         self.qty = value
         print(f"Updated order quantity: {self.qty}")
+
+    def update_profit_percentage(self, value):
+        self.profit_percentage = value
+        self.profit_percentage_slider.setValue(int(value * 100))  # Sync slider
+        print(f"Updated profit percentage: {self.profit_percentage}%")
+
+    def update_profit_percentage_from_slider(self, value):
+        self.profit_percentage = value / 100.0  # Convert back to percentage
+        self.profit_percentage_spinbox.setValue(self.profit_percentage)  # Sync spinbox
+        print(f"Updated profit percentage from slider: {self.profit_percentage}%")
 
     def get_account_balance(self):
         try:
@@ -270,9 +299,9 @@ class FundingTraderApp(QMainWindow):
             return
 
         funding_rate = abs(self.funding_data["funding_rate"])
-        # Calculate limit price: funding price ± (|funding_rate| + 1%)
-        limit_price = (self.funding_time_price * (1 + (funding_rate + 1)/100) if side == "Buy" 
-                      else self.funding_time_price * (1 - (funding_rate + 1)/100))
+        # Calculate limit price: funding price ± (|funding_rate| + user-defined profit_percentage%)
+        limit_price = (self.funding_time_price * (1 + (funding_rate + self.profit_percentage)/100) if side == "Buy" 
+                      else self.funding_time_price * (1 - (funding_rate + self.profit_percentage)/100))
         self.place_limit_close_order(symbol, side, self.qty, limit_price)
         self.open_order_id = None
 
