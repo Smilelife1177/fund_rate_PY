@@ -23,11 +23,11 @@ class FundingTraderApp(QMainWindow):
         )
 
         # Trading parameters
-        self.selected_symbol = "BTCUSDT" 
+        self.selected_symbol = "XEMUSDT" 
         self.funding_interval_hours = 1.0  # Bybit funding interval
         self.entry_time_seconds = 5.0  # Time before funding to enter
-        self.qty = 0.1  # Order quantity
-        self.profit_percentage = 1.0  # Desired profit percentage
+        self.qty = 1300  # Order quantity
+        self.profit_percentage = 0.3  # Desired profit percentage
         self.funding_data = None
         self.open_order_id = None
         self.funding_time_price = None

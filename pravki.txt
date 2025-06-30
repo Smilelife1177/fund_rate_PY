@@ -1,2 +1,4 @@
 short long should be right
 order type not Market!
+
+numbers after coma
