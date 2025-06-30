@@ -1,0 +1,2 @@
+short long should be right
+order type not Market!

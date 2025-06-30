@@ -19,18 +19,18 @@ class FundingStatsApp(QMainWindow):
 
         # Ініціалізація клієнта Bybit з API ключами
         self.session = HTTP(
-            testnet=True,
+            testnet=False,
             api_key=API_KEY,
             api_secret=API_SECRET
         )
 
         # Початкові параметри угоди
-        self.selected_symbol = "BTCUSDT"  # Змінено на активну пару
-        self.funding_interval_hours = 0.01  # Реальний інтервал фандингу Bybit (8 годин)
-        self.trade_duration_ms = 2000  # Час угоди (переконайтеся, що > entry_time_seconds * 1000)
-        self.take_profit_percent = 2.0  # Початковий тейк-профіт (%)
+        self.selected_symbol = "XEMUSDT"  # Змінено на активну пару
+        self.funding_interval_hours = 1.0  # Реальний інтервал фандингу Bybit (8 годин)
+        self.trade_duration_ms = 1000  # Час угоди (переконайтеся, що > entry_time_seconds * 1000)
+        self.take_profit_percent = 0.3  # Початковий тейк-профіт (%)
         self.entry_time_seconds = 1.0  # Час входження (секунди до фандингу)
-        self.qty = 0.001  # Зменшено кількість ордера до мінімально допустимої
+        self.qty = 1300.0  #  кількість ордера 
         self.enable_funding_trade = True  # Увімкнення фандингової угоди
         self.enable_post_funding_trade = True  # Увімкнення позиції після фандингу
         self.funding_data = None
@@ -58,7 +58,7 @@ class FundingStatsApp(QMainWindow):
         # Вибір монети
         self.coin_selector_label = QLabel("Виберіть монету:")
         self.coin_selector = QComboBox()
-        self.coins = ["BTCUSDT", "LPTUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]  # Оновлено список активних монет
+        self.coins = ["APEXUSDT", "LPTUSDT", "INJUSDT", "XRPUSDT", "XEMUSDT"]  # Оновлено список активних монет
         self.coin_selector.addItems(self.coins)
         self.coin_selector.setCurrentText(self.selected_symbol)
         self.coin_selector.currentTextChanged.connect(self.update_symbol)
@@ -98,7 +98,7 @@ class FundingStatsApp(QMainWindow):
         # Вибір кількості ордера (qty)
         self.qty_label = QLabel("Кількість ордера (qty):")
         self.qty_spinbox = QDoubleSpinBox()
-        self.qty_spinbox.setRange(0.001, 10.0)  # Змінено діапазон для відповідності мінімальним вимогам
+        self.qty_spinbox.setRange(0.001, 10000.0)  # Змінено діапазон для відповідності мінімальним вимогам
         self.qty_spinbox.setValue(self.qty)
         self.qty_spinbox.setSingleStep(0.001)
         self.qty_spinbox.valueChanged.connect(self.update_qty)
