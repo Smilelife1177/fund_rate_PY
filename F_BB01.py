@@ -5,6 +5,7 @@ from PyQt6.QtCore import QTimer, Qt
 from pybit.unified_trading import HTTP
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
+import math
 
 API_KEY = os.getenv('BYBIT_API_KEY')
 API_SECRET = os.getenv('BYBIT_API_SECRET')
@@ -14,7 +15,6 @@ class FundingTraderApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Bybit Funding Trader")
         self.setGeometry(100, 100, 400, 500)
-
         # Initialize Bybit client
         self.session = HTTP(
             testnet=False,
@@ -202,7 +202,7 @@ class FundingTraderApp(QMainWindow):
             response = self.session.get_tickers(category="linear", symbol=symbol)
             if response["retCode"] == 0 and response["result"]["list"]:
                 price = float(response["result"]["list"][0]["lastPrice"])
-                print(f"Current price {symbol}: {price}")
+                print(f"Raw price fetched for {symbol}: {price}")  # Added debug print
                 return price
             else:
                 print(f"Error fetching price: {response['retMsg']}")
@@ -242,6 +242,23 @@ class FundingTraderApp(QMainWindow):
         except Exception as e:
             print(f"Error placing market order: {e}")
             return None
+###
+    def get_symbol_info(self, symbol):
+        try:
+            response = self.session.get_instruments_info(category="linear", symbol=symbol)
+            if response["retCode"] == 0 and response["result"]["list"]:
+                price_filter = response["result"]["list"][0]["priceFilter"]
+                tick_size = float(price_filter["tickSize"])
+                print(f"Tick size for {symbol}: {tick_size}")
+                return tick_size
+            else:
+                print(f"Error fetching symbol info: {response['retMsg']}")
+                return None
+        except Exception as e:
+            print(f"Error fetching symbol info: {e}")
+            return None
+###
+
 
     def place_limit_close_order(self, symbol, side, qty, price):
         try:
@@ -253,10 +270,16 @@ class FundingTraderApp(QMainWindow):
                 side=close_side,
                 orderType="Limit",
                 qty=str(qty),
-                price=str(round(price, 2)),
+                price=str(round(price, 6)),  # Changed from 2 to 6 decimal places
                 timeInForce="GTC",
                 reduceOnly=True
             )
+            ###
+            tick_size = self.get_symbol_info(symbol)
+            if tick_size:
+                decimal_places = abs(int(math.log10(tick_size)))  # Calculate required decimal places
+                price = str(round(price, decimal_places))
+            ###
             if response["retCode"] == 0:
                 print(f"Limit close order placed: {response['result']}")
                 return response["result"]["orderId"]
@@ -312,7 +335,7 @@ class FundingTraderApp(QMainWindow):
 
             current_price = self.get_current_price(self.selected_symbol)
             if current_price is not None:
-                self.price_label.setText(f"Current Price: ${current_price:.2f}")
+                self.price_label.setText(f"Current Price: ${current_price:.6f}")  # Changed to .6f
             else:
                 self.price_label.setText("Current Price: N/A")
 
