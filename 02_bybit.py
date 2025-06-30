@@ -19,19 +19,18 @@ class FundingStatsApp(QMainWindow):
 
         # Ініціалізація клієнта Bybit з API ключами
         self.session = HTTP(
-            testnet=False,
+            testnet=True,
             api_key=API_KEY,
             api_secret=API_SECRET
         )
 
         # Початкові параметри угоди
-        self.selected_symbol = "OMGUSDT"  # Початкова монета (перевірте, чи активна на Bybit)
-        self.funding_interval_hours = 8.0  # Реальний інтервал фандингу Bybit (8 годин)
+        self.selected_symbol = "BTCUSDT"  # Змінено на активну пару
+        self.funding_interval_hours = 0.01  # Реальний інтервал фандингу Bybit (8 годин)
         self.trade_duration_ms = 2000  # Час угоди (переконайтеся, що > entry_time_seconds * 1000)
         self.take_profit_percent = 2.0  # Початковий тейк-профіт (%)
         self.entry_time_seconds = 1.0  # Час входження (секунди до фандингу)
-        self.leverage = 1  # Початкове плече (1x)
-        self.qty = 1.0  # Початкова кількість ордера (перевірте мінімальний розмір для монети)
+        self.qty = 0.001  # Зменшено кількість ордера до мінімально допустимої
         self.enable_funding_trade = True  # Увімкнення фандингової угоди
         self.enable_post_funding_trade = True  # Увімкнення позиції після фандингу
         self.funding_data = None
@@ -59,7 +58,7 @@ class FundingStatsApp(QMainWindow):
         # Вибір монети
         self.coin_selector_label = QLabel("Виберіть монету:")
         self.coin_selector = QComboBox()
-        self.coins = ["OMGUSDT", "LPTUSDT", "WCTUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]  # Список монет
+        self.coins = ["BTCUSDT", "LPTUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]  # Оновлено список активних монет
         self.coin_selector.addItems(self.coins)
         self.coin_selector.setCurrentText(self.selected_symbol)
         self.coin_selector.currentTextChanged.connect(self.update_symbol)
@@ -96,20 +95,12 @@ class FundingStatsApp(QMainWindow):
         self.entry_time_spinbox.setSingleStep(0.1)
         self.entry_time_spinbox.valueChanged.connect(self.update_entry_time)
 
-        # Вибір плеча
-        self.leverage_label = QLabel("Плече (x):")
-        self.leverage_spinbox = QSpinBox()
-        self.leverage_spinbox.setRange(1, 100)  # Від 1x до 100x
-        self.leverage_spinbox.setValue(self.leverage)
-        self.leverage_spinbox.setSingleStep(1)
-        self.leverage_spinbox.valueChanged.connect(self.update_leverage)
-
         # Вибір кількості ордера (qty)
         self.qty_label = QLabel("Кількість ордера (qty):")
         self.qty_spinbox = QDoubleSpinBox()
-        self.qty_spinbox.setRange(0.1, 1000.0)  # Від 0.1 до 1000.0
+        self.qty_spinbox.setRange(0.001, 10.0)  # Змінено діапазон для відповідності мінімальним вимогам
         self.qty_spinbox.setValue(self.qty)
-        self.qty_spinbox.setSingleStep(0.1)
+        self.qty_spinbox.setSingleStep(0.001)
         self.qty_spinbox.valueChanged.connect(self.update_qty)
 
         # Чекбокс для фандингової угоди
@@ -146,8 +137,6 @@ class FundingStatsApp(QMainWindow):
         layout.addWidget(self.take_profit_spinbox)
         layout.addWidget(self.entry_time_label)
         layout.addWidget(self.entry_time_spinbox)
-        layout.addWidget(self.leverage_label)
-        layout.addWidget(self.leverage_spinbox)
         layout.addWidget(self.qty_label)
         layout.addWidget(self.qty_spinbox)
         layout.addWidget(self.funding_trade_checkbox)
@@ -183,10 +172,6 @@ class FundingStatsApp(QMainWindow):
         print(f"Оновлено час входження: {self.entry_time_seconds} секунд")
         if self.trade_duration_ms < self.entry_time_seconds * 1000:
             print("Попередження: Час угоди менший за час входження, позиція може закритися до фандингу!")
-
-    def update_leverage(self, value):
-        self.leverage = value
-        print(f"Оновлено плече: {self.leverage}x")
 
     def update_qty(self, value):
         self.qty = value
@@ -260,25 +245,6 @@ class FundingStatsApp(QMainWindow):
             print(f"Помилка отримання ціни для {symbol}: {e}")
             return None
 
-    def set_leverage(self, symbol, leverage):
-        try:
-            print(f"Встановлення плеча {leverage}x для {symbol}...")
-            response = self.session.set_leverage(
-                category="linear",
-                symbol=symbol,
-                buyLeverage=str(leverage),
-                sellLeverage=str(leverage)
-            )
-            if response["retCode"] == 0:
-                print(f"Плече успішно встановлено: {leverage}x")
-                return True
-            else:
-                print(f"Помилка встановлення плеча для {symbol}: {response['retMsg']}")
-                return False
-        except Exception as e:
-            print(f"Помилка встановлення плеча для {symbol}: {e}")
-            return False
-
     def get_next_funding_time(self, funding_time):
         funding_dt = datetime.fromtimestamp(funding_time, tz=timezone.utc)
         current_time = datetime.now(timezone.utc)
@@ -293,11 +259,6 @@ class FundingStatsApp(QMainWindow):
 
     def place_order(self, symbol, side, qty, take_profit=None):
         try:
-            # Встановлюємо плече перед розміщенням ордера
-            if not self.set_leverage(symbol, self.leverage):
-                print(f"Не вдалося встановити плече для {symbol}, ордер не розміщено")
-                return None
-
             print(f"Розміщення ордера {side} для {symbol} з кількістю {qty} і тейк-профітом {take_profit}...")
             params = {
                 "category": "linear",
@@ -322,11 +283,6 @@ class FundingStatsApp(QMainWindow):
 
     def close_position(self, symbol, side):
         try:
-            # Встановлюємо плече перед закриттям (для узгодженості)
-            if not self.set_leverage(symbol, self.leverage):
-                print(f"Не вдалося встановити плече для {symbol}, закриття не виконано")
-                return
-
             # Визначаємо протилежну сторону для закриття
             close_side = "Buy" if side == "Sell" else "Sell"
             print(f"Закриття позиції {side} для {symbol} через розміщення ордера {close_side}...")
