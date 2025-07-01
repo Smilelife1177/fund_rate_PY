@@ -26,7 +26,7 @@ class FundingTraderApp(QMainWindow):
         self.selected_symbol = "XEMUSDT" 
         self.funding_interval_hours = 1.0  # Bybit funding interval
         self.entry_time_seconds = 5.0  # Time before funding to enter
-        self.qty = 1300  # Order quantity
+        self.qty = 110  # Order quantity
         self.profit_percentage = 0.3  # Desired profit percentage
         self.funding_data = None
         self.open_order_id = None
@@ -53,7 +53,7 @@ class FundingTraderApp(QMainWindow):
         # Coin selector
         self.coin_selector_label = QLabel("Select Coin:")
         self.coin_selector = QComboBox()
-        self.coins = ["BTCUSDT", "XEMUSDT", "INJUSDT", "XRPUSDT", "XEMUSDT"]
+        self.coins = ["BTCUSDT", "XEMUSDT", "INJUSDT", "XRPUSDT", "CUDISUSDT"]
         self.coin_selector.addItems(self.coins)
         self.coin_selector.setCurrentText(self.selected_symbol)
         self.coin_selector.currentTextChanged.connect(self.update_symbol)

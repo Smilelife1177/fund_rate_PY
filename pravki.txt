@@ -2,3 +2,9 @@ short long should be right
 order type not Market!
 
 numbers after coma
+
+
+limit order not math right
+
+
+limits smthing wring with him
