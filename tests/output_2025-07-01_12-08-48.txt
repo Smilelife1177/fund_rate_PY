@@ -1,0 +1,12 @@
+Time to next funding for XEMUSDT: 00:00:04
+Placing market Sell order for XEMUSDT with quantity 1800...
+Market order placed: {'orderId': 'fa4bcb64-6787-4a3f-b429-53a0ebccdf99', 'orderLinkId': ''}
+Time to next funding for XEMUSDT: 00:00:03
+Time to next funding for XEMUSDT: 00:00:02
+Time to next funding for XEMUSDT: 00:00:01
+Fetching current price for XEMUSDT...
+Raw price fetched for XEMUSDT: 0.003147
+Tick size for XEMUSDT: 1e-06
+Placing limit Buy order for XEMUSDT at 0.003118 with quantity 1800...
+Limit close order placed: {'orderId': '9a46c2ce-f80f-4fa0-9021-23ebb9d2fef0', 'orderLinkId': ''}
+Time to next funding for XEMUSDT: 00:00:00

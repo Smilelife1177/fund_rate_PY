@@ -8,3 +8,5 @@ limit order not math right
 
 
 limits smthing wring with him
+
+calculate min size
