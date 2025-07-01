@@ -60,11 +60,11 @@ class FundingTraderApp(QMainWindow):
 
         # Funding interval
         self.funding_interval_label = QLabel("Funding Interval (hours):")
-        self.funding_interval_spinbox = QDoubleSpinBox()
-        self.funding_interval_spinbox.setRange(0.01, 24.0)
-        self.funding_interval_spinbox.setValue(self.funding_interval_hours)
-        self.funding_interval_spinbox.setSingleStep(0.1)
-        self.funding_interval_spinbox.valueChanged.connect(self.update_funding_interval)
+        self.funding_interval_combobox = QComboBox()
+        self.funding_intervals = ["1", "4", "8"]
+        self.funding_interval_combobox.addItems(self.funding_intervals)
+        self.funding_interval_combobox.setCurrentText(str(int(self.funding_interval_hours)))
+        self.funding_interval_combobox.currentTextChanged.connect(self.update_funding_interval)
 
         # Entry time
         self.entry_time_label = QLabel("Entry Time Before Funding (seconds):")
@@ -92,7 +92,7 @@ class FundingTraderApp(QMainWindow):
 
         # Profit percentage slider
         self.profit_percentage_slider = QSlider(Qt.Orientation.Horizontal)
-        self.profit_percentage_slider.setRange(10, 200)  # 0.1% to 10.0% (multiplied by 100 for integer steps)
+        self.profit_percentage_slider.setRange(10, 200)  # 0.1% to 2.0% (multiplied by 100 for integer steps)
         self.profit_percentage_slider.setValue(int(self.profit_percentage * 100))
         self.profit_percentage_slider.setSingleStep(10)  # 0.1% steps
         self.profit_percentage_slider.valueChanged.connect(self.update_profit_percentage_from_slider)
@@ -111,7 +111,7 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.coin_selector_label)
         layout.addWidget(self.coin_selector)
         layout.addWidget(self.funding_interval_label)
-        layout.addWidget(self.funding_interval_spinbox)
+        layout.addWidget(self.funding_interval_combobox)
         layout.addWidget(self.entry_time_label)
         layout.addWidget(self.entry_time_spinbox)
         layout.addWidget(self.qty_label)
@@ -132,7 +132,7 @@ class FundingTraderApp(QMainWindow):
         self.update_funding_data()
 
     def update_funding_interval(self, value):
-        self.funding_interval_hours = value
+        self.funding_interval_hours = float(value)
         print(f"Updated funding interval: {self.funding_interval_hours} hours")
         self.update_funding_data()
 
@@ -340,7 +340,7 @@ class FundingTraderApp(QMainWindow):
         # Calculate limit price: funding price ± (|funding_rate| + user-defined profit_percentage%)
         limit_price = (self.funding_time_price * (1 + (funding_rate + self.profit_percentage)/100) if side == "Buy" 
                       else self.funding_time_price * (1 - (funding_rate + self.profit_percentage)/100))
-        self.place_limit_close_order(symbol, self.qty, limit_price)
+        self.place_limit_close_order(symbol, side, self.qty, limit_price)
         self.open_order_id = None
 
     def update_funding_data(self):
