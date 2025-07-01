@@ -1,12 +1,7 @@
-short long should be right
-order type not Market!
-
-numbers after coma
-
+!order type not Market!?
 
 limit order not math right
 
+calculate min size order 
 
-limits smthing wring with him
-
-calculate min size
+ping calculate

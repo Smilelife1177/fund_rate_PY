@@ -85,14 +85,14 @@ class FundingTraderApp(QMainWindow):
         # Profit percentage
         self.profit_percentage_label = QLabel("Desired Profit Percentage (%):")
         self.profit_percentage_spinbox = QDoubleSpinBox()
-        self.profit_percentage_spinbox.setRange(0.1, 10.0)
+        self.profit_percentage_spinbox.setRange(0.1, 2.0)
         self.profit_percentage_spinbox.setValue(self.profit_percentage)
         self.profit_percentage_spinbox.setSingleStep(0.1)
         self.profit_percentage_spinbox.valueChanged.connect(self.update_profit_percentage)
 
         # Profit percentage slider
         self.profit_percentage_slider = QSlider(Qt.Orientation.Horizontal)
-        self.profit_percentage_slider.setRange(10, 1000)  # 0.1% to 10.0% (multiplied by 100 for integer steps)
+        self.profit_percentage_slider.setRange(10, 200)  # 0.1% to 10.0% (multiplied by 100 for integer steps)
         self.profit_percentage_slider.setValue(int(self.profit_percentage * 100))
         self.profit_percentage_slider.setSingleStep(10)  # 0.1% steps
         self.profit_percentage_slider.valueChanged.connect(self.update_profit_percentage_from_slider)
@@ -101,6 +101,7 @@ class FundingTraderApp(QMainWindow):
         self.funding_info_label = QLabel("Funding Rate: N/A | Time to Next Funding: N/A")
         self.price_label = QLabel("Current Price: N/A")
         self.balance_label = QLabel("Account Balance: N/A")
+        self.volume_label = QLabel("Order Volume: N/A")
 
         # Refresh button
         self.refresh_button = QPushButton("Refresh Data")
@@ -121,6 +122,7 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.funding_info_label)
         layout.addWidget(self.price_label)
         layout.addWidget(self.balance_label)
+        layout.addWidget(self.volume_label)
         layout.addWidget(self.refresh_button)
         print("UI setup completed")
 
@@ -141,6 +143,7 @@ class FundingTraderApp(QMainWindow):
     def update_qty(self, value):
         self.qty = value
         print(f"Updated order quantity: {self.qty}")
+        self.update_volume_label()
 
     def update_profit_percentage(self, value):
         self.profit_percentage = value
@@ -151,6 +154,19 @@ class FundingTraderApp(QMainWindow):
         self.profit_percentage = value / 100.0  # Convert back to percentage
         self.profit_percentage_spinbox.setValue(self.profit_percentage)  # Sync spinbox
         print(f"Updated profit percentage from slider: {self.profit_percentage}%")
+
+    def update_volume_label(self):
+        current_price = self.get_current_price(self.selected_symbol)
+        if current_price is not None and self.qty is not None:
+            volume = self.qty * current_price
+            self.volume_label.setText(f"Order Volume: ${volume:.2f} USD")
+            if volume < 5.0:
+                self.volume_label.setStyleSheet("color: red;")
+            else:
+                self.volume_label.setStyleSheet("color: black;")
+        else:
+            self.volume_label.setText("Order Volume: N/A")
+            self.volume_label.setStyleSheet("color: black;")
 
     def get_account_balance(self):
         try:
@@ -293,6 +309,8 @@ class FundingTraderApp(QMainWindow):
             self.funding_info_label.setText("Funding Rate: N/A | Time to Next Funding: N/A")
             self.price_label.setText("Current Price: N/A")
             self.balance_label.setText("Account Balance: N/A")
+            self.volume_label.setText("Order Volume: N/A")
+            self.volume_label.setStyleSheet("color: black;")
             return
 
         symbol = self.funding_data["symbol"]
@@ -322,7 +340,7 @@ class FundingTraderApp(QMainWindow):
         # Calculate limit price: funding price ± (|funding_rate| + user-defined profit_percentage%)
         limit_price = (self.funding_time_price * (1 + (funding_rate + self.profit_percentage)/100) if side == "Buy" 
                       else self.funding_time_price * (1 - (funding_rate + self.profit_percentage)/100))
-        self.place_limit_close_order(symbol, side, self.qty, limit_price)
+        self.place_limit_close_order(symbol, self.qty, limit_price)
         self.open_order_id = None
 
     def update_funding_data(self):
@@ -351,6 +369,10 @@ class FundingTraderApp(QMainWindow):
                 self.funding_info_label.setText("Funding Rate: N/A | Time to Next Funding: N/A")
                 self.price_label.setText("Current Price: N/A")
                 self.balance_label.setText("Account Balance: N/A")
+                self.volume_label.setText("Order Volume: N/A")
+                self.volume_label.setStyleSheet("color: black;")
+
+            self.update_volume_label()
 
             print("Data updated successfully")
 
@@ -359,6 +381,8 @@ class FundingTraderApp(QMainWindow):
             self.funding_info_label.setText("Funding Rate: Error | Time to Next Funding: Error")
             self.price_label.setText("Current Price: Error")
             self.balance_label.setText("Account Balance: Error")
+            self.volume_label.setText("Order Volume: Error")
+            self.volume_label.setStyleSheet("color: black;")
 
     def closeEvent(self, event):
         self.timer.stop()
