@@ -1,7 +1,10 @@
-!order type not Market!?
+1/!order type not Market!?
 
-limit order not math right
+2/(limit order not math right) -> (+2% to profit <- thats not good need FIX!) -> (funding_rate needs to be writen)
 
-calculate min size order 
+3/ping calculate
 
-ping calculate
+4/long/short  after first metod
+
+CALC = -0.8700% + 0.40%
+       -0.9440% + 0.40%

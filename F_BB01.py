@@ -6,6 +6,7 @@ from pybit.unified_trading import HTTP
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import math
+import time
 
 API_KEY = os.getenv('BYBIT_API_KEY')
 API_SECRET = os.getenv('BYBIT_API_SECRET')
@@ -40,9 +41,15 @@ class FundingTraderApp(QMainWindow):
         self.timer.timeout.connect(self.check_funding_time)
         self.timer.start(1000)  # Check every second
 
+        # Timer for updating ping
+        self.ping_timer = QTimer()
+        self.ping_timer.timeout.connect(self.update_ping)
+        self.ping_timer.start(15000)  # Update ping every 5 seconds
+
         # Initial data update
         print("Initializing application...")
         self.update_funding_data()
+        self.update_ping()
 
     def setup_ui(self):
         print("Setting up UI...")
@@ -102,6 +109,7 @@ class FundingTraderApp(QMainWindow):
         self.price_label = QLabel("Current Price: N/A")
         self.balance_label = QLabel("Account Balance: N/A")
         self.volume_label = QLabel("Order Volume: N/A")
+        self.ping_label = QLabel("Ping: N/A")
 
         # Refresh button
         self.refresh_button = QPushButton("Refresh Data")
@@ -123,6 +131,7 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.price_label)
         layout.addWidget(self.balance_label)
         layout.addWidget(self.volume_label)
+        layout.addWidget(self.ping_label)
         layout.addWidget(self.refresh_button)
         print("UI setup completed")
 
@@ -167,6 +176,29 @@ class FundingTraderApp(QMainWindow):
         else:
             self.volume_label.setText("Order Volume: N/A")
             self.volume_label.setStyleSheet("color: black;")
+
+    def update_ping(self):
+        try:
+            print("Pinging Bybit server...")
+            start_time = time.time()
+            response = self.session.get_server_time()
+            end_time = time.time()
+            if response["retCode"] == 0:
+                ping_ms = (end_time - start_time) * 1000  # Convert to milliseconds
+                self.ping_label.setText(f"Ping: {ping_ms:.2f} ms")
+                if ping_ms > 500:
+                    self.ping_label.setStyleSheet("color: red;")
+                else:
+                    self.ping_label.setStyleSheet("color: black;")
+                print(f"Ping: {ping_ms:.2f} ms")
+            else:
+                self.ping_label.setText("Ping: Error")
+                self.ping_label.setStyleSheet("color: red;")
+                print(f"Error pinging server: {response['retMsg']}")
+        except Exception as e:
+            self.ping_label.setText("Ping: Error")
+            self.ping_label.setStyleSheet("color: red;")
+            print(f"Error pinging server: {e}")
 
     def get_account_balance(self):
         try:
@@ -311,6 +343,8 @@ class FundingTraderApp(QMainWindow):
             self.balance_label.setText("Account Balance: N/A")
             self.volume_label.setText("Order Volume: N/A")
             self.volume_label.setStyleSheet("color: black;")
+            self.ping_label.setText("Ping: N/A")
+            self.ping_label.setStyleSheet("color: black;")
             return
 
         symbol = self.funding_data["symbol"]
@@ -371,8 +405,11 @@ class FundingTraderApp(QMainWindow):
                 self.balance_label.setText("Account Balance: N/A")
                 self.volume_label.setText("Order Volume: N/A")
                 self.volume_label.setStyleSheet("color: black;")
+                self.ping_label.setText("Ping: N/A")
+                self.ping_label.setStyleSheet("color: black;")
 
             self.update_volume_label()
+            self.update_ping()
 
             print("Data updated successfully")
 
@@ -383,9 +420,12 @@ class FundingTraderApp(QMainWindow):
             self.balance_label.setText("Account Balance: Error")
             self.volume_label.setText("Order Volume: Error")
             self.volume_label.setStyleSheet("color: black;")
+            self.ping_label.setText("Ping: Error")
+            self.ping_label.setStyleSheet("color: red;")
 
     def closeEvent(self, event):
         self.timer.stop()
+        self.ping_timer.stop()
         event.accept()
 
 if __name__ == "__main__":
