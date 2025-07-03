@@ -68,7 +68,7 @@ class FundingTraderApp(QMainWindow):
         # Funding interval
         self.funding_interval_label = QLabel("Funding Interval (hours):")
         self.funding_interval_combobox = QComboBox()
-        self.funding_intervals = ["1", "4", "8"]
+        self.funding_intervals = ["0.01", "1", "4", "8"]
         self.funding_interval_combobox.addItems(self.funding_intervals)
         self.funding_interval_combobox.setCurrentText(str(int(self.funding_interval_hours)))
         self.funding_interval_combobox.currentTextChanged.connect(self.update_funding_interval)
@@ -370,10 +370,9 @@ class FundingTraderApp(QMainWindow):
             self.open_order_id = None
             return
 
-        funding_rate = abs(self.funding_data["funding_rate"])
-        # Calculate limit price: funding price ± (|funding_rate| + user-defined profit_percentage%)
-        limit_price = (self.funding_time_price * (1 + (funding_rate + self.profit_percentage)/100) if side == "Buy" 
-                      else self.funding_time_price * (1 - (funding_rate + self.profit_percentage)/100))
+        # Calculate limit price: funding price ± user-defined profit_percentage%
+        limit_price = (self.funding_time_price * (1 + self.profit_percentage / 100) if side == "Buy" 
+                      else self.funding_time_price * (1 - self.profit_percentage / 100))
         self.place_limit_close_order(symbol, side, self.qty, limit_price)
         self.open_order_id = None
 
@@ -405,7 +404,7 @@ class FundingTraderApp(QMainWindow):
                 self.balance_label.setText("Account Balance: N/A")
                 self.volume_label.setText("Order Volume: N/A")
                 self.volume_label.setStyleSheet("color: black;")
-                self.ping_label.setText("Ping: N/A")
+                self.ping_label.setText("Ping Ascending: N/A")
                 self.ping_label.setStyleSheet("color: black;")
 
             self.update_volume_label()

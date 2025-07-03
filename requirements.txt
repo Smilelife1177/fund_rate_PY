@@ -1,6 +1,4 @@
-aiogram==3.20.0.post0
-aiomysql==0.2.0
 pybit==5.11.0
-PyQt6==6.9.0
+PyQt6==6.9.1
 pyqt6_sip==13.10.2
-python-dotenv==1.1.0
+python-dotenv==1.1.1
