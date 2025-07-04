@@ -28,7 +28,8 @@ class FundingTraderApp(QMainWindow):
         self.funding_interval_hours = 1.0  # Bybit funding interval
         self.entry_time_seconds = 5.0  # Time before funding to enter
         self.qty = 1800  # Order quantity
-        self.profit_percentage = 0.3  # Desired profit percentage
+        self.profit_percentage = 1.0  # Desired profit percentage
+        self.leverage = 1.0  # Default leverage
         self.funding_data = None
         self.open_order_id = None
         self.funding_time_price = None
@@ -104,10 +105,19 @@ class FundingTraderApp(QMainWindow):
         self.profit_percentage_slider.setSingleStep(10)  # 0.1% steps
         self.profit_percentage_slider.valueChanged.connect(self.update_profit_percentage_from_slider)
 
+        # Leverage
+        self.leverage_label = QLabel("Leverage (x):")
+        self.leverage_spinbox = QDoubleSpinBox()
+        self.leverage_spinbox.setRange(1.0, 100.0)
+        self.leverage_spinbox.setValue(self.leverage)
+        self.leverage_spinbox.setSingleStep(0.1)
+        self.leverage_spinbox.valueChanged.connect(self.update_leverage)
+
         # Display labels
         self.funding_info_label = QLabel("Funding Rate: N/A | Time to Next Funding: N/A")
         self.price_label = QLabel("Current Price: N/A")
         self.balance_label = QLabel("Account Balance: N/A")
+        self.leveraged_balance_label = QLabel("Leveraged Balance: N/A")
         self.volume_label = QLabel("Order Volume: N/A")
         self.ping_label = QLabel("Ping: N/A")
 
@@ -127,9 +137,12 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.profit_percentage_label)
         layout.addWidget(self.profit_percentage_spinbox)
         layout.addWidget(self.profit_percentage_slider)
+        layout.addWidget(self.leverage_label)
+        layout.addWidget(self.leverage_spinbox)
         layout.addWidget(self.funding_info_label)
         layout.addWidget(self.price_label)
         layout.addWidget(self.balance_label)
+        layout.addWidget(self.leveraged_balance_label)
         layout.addWidget(self.volume_label)
         layout.addWidget(self.ping_label)
         layout.addWidget(self.refresh_button)
@@ -164,6 +177,11 @@ class FundingTraderApp(QMainWindow):
         self.profit_percentage_spinbox.setValue(self.profit_percentage)  # Sync spinbox
         print(f"Updated profit percentage from slider: {self.profit_percentage}%")
 
+    def update_leverage(self, value):
+        self.leverage = value
+        print(f"Updated leverage: {self.leverage}x")
+        self.update_leveraged_balance_label()
+
     def update_volume_label(self):
         current_price = self.get_current_price(self.selected_symbol)
         if current_price is not None and self.qty is not None:
@@ -176,6 +194,14 @@ class FundingTraderApp(QMainWindow):
         else:
             self.volume_label.setText("Order Volume: N/A")
             self.volume_label.setStyleSheet("color: black;")
+
+    def update_leveraged_balance_label(self):
+        balance = self.get_account_balance()
+        if balance is not None and self.leverage is not None:
+            leveraged_balance = balance * self.leverage
+            self.leveraged_balance_label.setText(f"Leveraged Balance: ${leveraged_balance:.2f} USDT")
+        else:
+            self.leveraged_balance_label.setText("Leveraged Balance: N/A")
 
     def update_ping(self):
         try:
@@ -341,6 +367,7 @@ class FundingTraderApp(QMainWindow):
             self.funding_info_label.setText("Funding Rate: N/A | Time to Next Funding: N/A")
             self.price_label.setText("Current Price: N/A")
             self.balance_label.setText("Account Balance: N/A")
+            self.leveraged_balance_label.setText("Leveraged Balance: N/A")
             self.volume_label.setText("Order Volume: N/A")
             self.volume_label.setStyleSheet("color: black;")
             self.ping_label.setText("Ping: N/A")
@@ -390,8 +417,10 @@ class FundingTraderApp(QMainWindow):
             balance = self.get_account_balance()
             if balance is not None:
                 self.balance_label.setText(f"Account Balance: ${balance:.2f} USDT")
+                self.update_leveraged_balance_label()
             else:
                 self.balance_label.setText("Account Balance: N/A")
+                self.leveraged_balance_label.setText("Leveraged Balance: N/A")
 
             if self.funding_data:
                 funding_rate = self.funding_data["funding_rate"]
@@ -402,9 +431,10 @@ class FundingTraderApp(QMainWindow):
                 self.funding_info_label.setText("Funding Rate: N/A | Time to Next Funding: N/A")
                 self.price_label.setText("Current Price: N/A")
                 self.balance_label.setText("Account Balance: N/A")
+                self.leveraged_balance_label.setText("Leveraged Balance: N/A")
                 self.volume_label.setText("Order Volume: N/A")
                 self.volume_label.setStyleSheet("color: black;")
-                self.ping_label.setText("Ping Ascending: N/A")
+                self.ping_label.setText("Ping: N/A")
                 self.ping_label.setStyleSheet("color: black;")
 
             self.update_volume_label()
@@ -417,6 +447,7 @@ class FundingTraderApp(QMainWindow):
             self.funding_info_label.setText("Funding Rate: Error | Time to Next Funding: Error")
             self.price_label.setText("Current Price: Error")
             self.balance_label.setText("Account Balance: Error")
+            self.leveraged_balance_label.setText("Leveraged Balance: Error")
             self.volume_label.setText("Order Volume: Error")
             self.volume_label.setStyleSheet("color: black;")
             self.ping_label.setText("Ping: Error")
