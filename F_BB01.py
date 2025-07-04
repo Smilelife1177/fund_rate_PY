@@ -60,7 +60,7 @@ class FundingTraderApp(QMainWindow):
         # Coin selector
         self.coin_selector_label = QLabel("Select Coin:")
         self.coin_selector = QComboBox()
-        self.coins = ["BTCUSDT", "XEMUSDT", "INJUSDT", "XRPUSDT", "CUDISUSDT"]
+        self.coins = ["BTCUSDT", "XEMUSDT", "INJUSDT", "XRPUSDT", "HUSDT"]
         self.coin_selector.addItems(self.coins)
         self.coin_selector.setCurrentText(self.selected_symbol)
         self.coin_selector.currentTextChanged.connect(self.update_symbol)
