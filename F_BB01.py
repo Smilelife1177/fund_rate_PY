@@ -1,6 +1,6 @@
 import os
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QComboBox, QLabel, QDoubleSpinBox, QSlider
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox
 from PyQt6.QtCore import QTimer, Qt
 from pybit.unified_trading import HTTP
 from datetime import datetime, timedelta, timezone
@@ -45,7 +45,7 @@ class FundingTraderApp(QMainWindow):
         # Timer for updating ping
         self.ping_timer = QTimer()
         self.ping_timer.timeout.connect(self.update_ping)
-        self.ping_timer.start(15000)  # Update ping every 5 seconds
+        self.ping_timer.start(15000)  # Update ping every 15 seconds
 
         # Initial data update
         print("Initializing application...")
@@ -58,13 +58,11 @@ class FundingTraderApp(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        # Coin selector
-        self.coin_selector_label = QLabel("Select Coin:")
-        self.coin_selector = QComboBox()
-        self.coins = ["BTCUSDT", "XEMUSDT", "INJUSDT", "XRPUSDT", "HUSDT"]
-        self.coin_selector.addItems(self.coins)
-        self.coin_selector.setCurrentText(self.selected_symbol)
-        self.coin_selector.currentTextChanged.connect(self.update_symbol)
+        # Coin input
+        self.coin_input_label = QLabel("Enter Coin (e.g., BTCUSDT):")
+        self.coin_input = QLineEdit()
+        self.coin_input.setText(self.selected_symbol)
+        self.coin_input.textChanged.connect(self.update_symbol)
 
         # Funding interval
         self.funding_interval_label = QLabel("Funding Interval (hours):")
@@ -126,8 +124,8 @@ class FundingTraderApp(QMainWindow):
         self.refresh_button.clicked.connect(self.update_funding_data)
 
         # Add widgets to layout
-        layout.addWidget(self.coin_selector_label)
-        layout.addWidget(self.coin_selector)
+        layout.addWidget(self.coin_input_label)
+        layout.addWidget(self.coin_input)
         layout.addWidget(self.funding_interval_label)
         layout.addWidget(self.funding_interval_combobox)
         layout.addWidget(self.entry_time_label)
@@ -149,7 +147,7 @@ class FundingTraderApp(QMainWindow):
         print("UI setup completed")
 
     def update_symbol(self, symbol):
-        self.selected_symbol = symbol
+        self.selected_symbol = symbol.strip().upper()
         print(f"Updated symbol: {self.selected_symbol}")
         self.update_funding_data()
 
@@ -448,10 +446,10 @@ class FundingTraderApp(QMainWindow):
             self.price_label.setText("Current Price: Error")
             self.balance_label.setText("Account Balance: Error")
             self.leveraged_balance_label.setText("Leveraged Balance: Error")
-            self.volume_label.setText("Order Volume: Error")
+            self.volume_label.setText("ランOrder Volume: Error")
             self.volume_label.setStyleSheet("color: black;")
             self.ping_label.setText("Ping: Error")
-            self.ping_label.setStyleSheet("color: red;")
+            self.ping_label.setStyleSheet("color: red spect;")
 
     def closeEvent(self, event):
         self.timer.stop()
