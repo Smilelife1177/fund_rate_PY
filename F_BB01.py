@@ -24,10 +24,10 @@ class FundingTraderApp(QMainWindow):
         )
 
         # Trading parameters
-        self.selected_symbol = "XEMUSDT" 
+        self.selected_symbol = "VICUSDT" 
         self.funding_interval_hours = 1.0  # Bybit funding interval
         self.entry_time_seconds = 5.0  # Time before funding to enter
-        self.qty = 1800  # Order quantity
+        self.qty = 20  # Order quantity
         self.profit_percentage = 1.0  # Desired profit percentage
         self.leverage = 1.0  # Default leverage
         self.funding_data = None
@@ -62,7 +62,10 @@ class FundingTraderApp(QMainWindow):
         self.coin_input_label = QLabel("Enter Coin (e.g., BTCUSDT):")
         self.coin_input = QLineEdit()
         self.coin_input.setText(self.selected_symbol)
-        self.coin_input.textChanged.connect(self.update_symbol)
+        
+        # Update coin button
+        self.update_coin_button = QPushButton("Update Coin")
+        self.update_coin_button.clicked.connect(self.handle_update_coin)
 
         # Funding interval
         self.funding_interval_label = QLabel("Funding Interval (hours):")
@@ -126,6 +129,7 @@ class FundingTraderApp(QMainWindow):
         # Add widgets to layout
         layout.addWidget(self.coin_input_label)
         layout.addWidget(self.coin_input)
+        layout.addWidget(self.update_coin_button)
         layout.addWidget(self.funding_interval_label)
         layout.addWidget(self.funding_interval_combobox)
         layout.addWidget(self.entry_time_label)
@@ -145,6 +149,10 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.ping_label)
         layout.addWidget(self.refresh_button)
         print("UI setup completed")
+
+    def handle_update_coin(self):
+        symbol = self.coin_input.text()
+        self.update_symbol(symbol)
 
     def update_symbol(self, symbol):
         self.selected_symbol = symbol.strip().upper()
@@ -446,10 +454,10 @@ class FundingTraderApp(QMainWindow):
             self.price_label.setText("Current Price: Error")
             self.balance_label.setText("Account Balance: Error")
             self.leveraged_balance_label.setText("Leveraged Balance: Error")
-            self.volume_label.setText("ランOrder Volume: Error")
+            self.volume_label.setText("Order Volume: Error")
             self.volume_label.setStyleSheet("color: black;")
             self.ping_label.setText("Ping: Error")
-            self.ping_label.setStyleSheet("color: red spect;")
+            self.ping_label.setStyleSheet("color: red;")
 
     def closeEvent(self, event):
         self.timer.stop()
