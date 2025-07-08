@@ -1,0 +1,22 @@
++---------------------+---------------------+---------------------+---------------------+---------------------+
+| Процент   | Фандинг  | Прибиль (%) | Дохід ($) | Комісія | Об'єм ($) | В сделкі ? | Тікет |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+|           |           |           |           |           |           |           |           |
+|[  0.65% ] |[ -0.052$ ]|[  -0.017$ ]| [ 0.050$ ]|[ 0.0015$] |[  7.55$ ] | [   3м, 15с   ] | MAGICUSDT |
+|           |           |           |           |           |           |           |           |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+
+Time to next funding for MAGICUSDT: 00:00:04
+Placing market Sell order for MAGICUSDT with quantity 45...
+Market order placed: {'orderId': '94002f94-37b9-46bd-8fc6-3156cfacdb81', 'orderLinkId': ''}
+Pinging Bybit server...
+Ping: 201.32 ms
+Time to next funding for MAGICUSDT: 00:00:02
+Time to next funding for MAGICUSDT: 00:00:02
+Time to next funding for MAGICUSDT: 00:00:01
+Fetching current price for MAGICUSDT...
+Raw price fetched for MAGICUSDT: 0.1685
+Tick size for MAGICUSDT: 0.0001
+Placing limit Buy order for MAGICUSDT at 0.1663 with quantity 45...
+Limit close order placed: {'orderId': '95dff4cd-ccca-4d40-b0ee-a8d2d9e9b0b5', 'orderLinkId': ''}
+Time to next funding for MAGICUSDT: 00:00:00

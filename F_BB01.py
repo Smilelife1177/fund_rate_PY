@@ -24,12 +24,12 @@ class FundingTraderApp(QMainWindow):
         )
 
         # Trading parameters
-        self.selected_symbol = "VICUSDT" 
+        self.selected_symbol = "MAGICUSDT" 
         self.funding_interval_hours = 1.0  # Bybit funding interval
         self.entry_time_seconds = 5.0  # Time before funding to enter
-        self.qty = 20  # Order quantity
+        self.qty = 45  # Order quantity
         self.profit_percentage = 1.0  # Desired profit percentage
-        self.leverage = 1.0  # Default leverage
+        self.leverage = 4.0  # Default leverage
         self.funding_data = None
         self.open_order_id = None
         self.funding_time_price = None
