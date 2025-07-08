@@ -1,0 +1,13 @@
+Time to next funding for CUDISUSDT: 00:00:04
+Placing market Sell order for CUDISUSDT with quantity 100.0...
+Market order placed: {'orderId': '56ca04b0-2632-4b09-86af-cad32861f90d', 'orderLinkId': ''}
+Time to next funding for CUDISUSDT: 00:00:03
+Time to next funding for CUDISUSDT: 00:00:02
+Time to next funding for CUDISUSDT: 00:00:01
+Fetching current price for CUDISUSDT...
+Raw price fetched for CUDISUSDT: 0.05392
+Tick size for CUDISUSDT: 1e-05
+Placing limit Buy order for CUDISUSDT at 0.05322 with quantity 100.0...
+Limit close order placed: {'orderId': '7327ce7a-bea5-4e79-91b7-83091a56b0b6', 'orderLinkId': ''}
+Time to next funding for CUDISUSDT: 00:00:00
+Time to next funding for CUDISUSDT: 00:59:59
