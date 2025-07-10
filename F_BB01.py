@@ -24,7 +24,7 @@ class FundingTraderApp(QMainWindow):
         )
 
         # Trading parameters
-        self.selected_symbol = "MAGICUSDT" 
+        self.selected_symbol = "HYPERUSDT" 
         self.funding_interval_hours = 1.0  # Bybit funding interval
         self.entry_time_seconds = 5.0  # Time before funding to enter
         self.qty = 45  # Order quantity
