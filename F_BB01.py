@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import math
 import time
+from PyQt6.QtGui import QIcon  # Added for icon support
 
 API_KEY = os.getenv('BYBIT_API_KEY')
 API_SECRET = os.getenv('BYBIT_API_SECRET')
@@ -16,6 +17,13 @@ class FundingTraderApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Bybit Funding Trader")
         self.setGeometry(100, 100, 400, 500)
+
+        icon_path = r"images\log.jpg"
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            print(f"Icon file not found at: {icon_path}")
+
         # Initialize Bybit client
         self.session = HTTP(
             testnet=False,
@@ -190,10 +198,12 @@ class FundingTraderApp(QMainWindow):
 
     def update_volume_label(self):
         current_price = self.get_current_price(self.selected_symbol)
+        balance = self.get_account_balance()
+        leveraged_balance = balance * self.leverage if balance is not None and self.leverage is not None else None
         if current_price is not None and self.qty is not None:
             volume = self.qty * current_price
             self.volume_label.setText(f"Order Volume: ${volume:.2f} USD")
-            if volume < 5.0:
+            if volume < 5.0 or (leveraged_balance is not None and volume > leveraged_balance):
                 self.volume_label.setStyleSheet("color: red;")
             else:
                 self.volume_label.setStyleSheet("color: black;")
