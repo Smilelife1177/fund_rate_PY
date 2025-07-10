@@ -28,6 +28,14 @@ To download needed libraries enter that command in cmd
 pip install -r requirements.txt
 ```
 
+To start working application needs to starrt "start_api.sh" file to create .env file with your api secrets🐱‍👤
+
+```
+bash .\start_api.sh
+```
+
+It create an .env file with som,e texts, u need to put your apis keys to that file after "=" 
+
 In folders chose your exchange
 
 And run code by pressing "F5"
