@@ -29,7 +29,7 @@ class FundingTraderApp(QMainWindow):
         self.entry_time_seconds = 5.0  # Time before funding to enter
         self.qty = 45  # Order quantity
         self.profit_percentage = 1.0  # Desired profit percentage
-        self.leverage = 4.0  # Default leverage
+        self.leverage = 5.0  # Default leverage
         self.funding_data = None
         self.open_order_id = None
         self.funding_time_price = None
