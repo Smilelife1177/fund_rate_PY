@@ -1,0 +1,26 @@
++---------------------+---------------------+---------------------+---------------------+---------------------+
+| Процент   | Фандинг  | Прибиль (%) | Дохід ($) | Комісія | Об'єм ($) | В сделкі ? | Тікет |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+|           |           |           |           |           |           |           |           |
+|[  2.98% ] |[ -0.065$ ]|[  0.17$ ]| [ 0.24$ ]|[ 0.0011$] |[  8.05$ ] | [   20c   ] | 	HYPERUSDT |
+|           |           |           |           |           |           |           |           |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+
+Time to next funding for HYPERUSDT: 00:00:08
+Placing market Sell order for HYPERUSDT with quantity 20.0...
+Market order placed: {'orderId': 'b8813005-5129-43f3-a77b-224d608054fb', 'orderLinkId': ''}
+Time to next funding for HYPERUSDT: 00:00:07
+Time to next funding for HYPERUSDT: 00:00:06
+Time to next funding for HYPERUSDT: 00:00:05
+Time to next funding for HYPERUSDT: 00:00:04
+Time to next funding for HYPERUSDT: 00:00:03
+Time to next funding for HYPERUSDT: 00:00:02
+Pinging Bybit server...
+Ping: 199.44 ms
+Time to next funding for HYPERUSDT: 00:00:01
+Fetching current price for HYPERUSDT...
+Raw price fetched for HYPERUSDT: 0.4018
+Tick size for HYPERUSDT: 0.0001
+Placing limit Buy order for HYPERUSDT at 0.3966 with quantity 20.0...
+Limit close order placed: {'orderId': '94b35d27-9354-4500-9ff7-7f31558d706a', 'orderLinkId': ''}
+Time to next funding for HYPERUSDT: 00:59:59
