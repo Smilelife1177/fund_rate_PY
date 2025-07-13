@@ -12,7 +12,7 @@ class FundingTraderApp(QMainWindow):
         self.setWindowTitle("Bybit Funding Trader")
         self.setGeometry(100, 100, 400, 500)
 
-        icon_path = r"images\log.jpg"
+        icon_path = r"images\log.ico"  # Replace with your new icon file path
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else:
@@ -88,13 +88,13 @@ class FundingTraderApp(QMainWindow):
 
         self.profit_percentage_label = QLabel("Desired Profit Percentage (%):")
         self.profit_percentage_spinbox = QDoubleSpinBox()
-        self.profit_percentage_spinbox.setRange(0.1, 2.0)
+        self.profit_percentage_spinbox.setRange(0.1, 10.0)
         self.profit_percentage_spinbox.setValue(self.profit_percentage)
         self.profit_percentage_spinbox.setSingleStep(0.1)
         self.profit_percentage_spinbox.valueChanged.connect(self.update_profit_percentage)
 
         self.profit_percentage_slider = QSlider(Qt.Orientation.Horizontal)
-        self.profit_percentage_slider.setRange(10, 200)
+        self.profit_percentage_slider.setRange(10, 1000)
         self.profit_percentage_slider.setValue(int(self.profit_percentage * 100))
         self.profit_percentage_slider.setSingleStep(10)
         self.profit_percentage_slider.valueChanged.connect(self.update_profit_percentage_from_slider)
