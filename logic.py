@@ -6,12 +6,26 @@ import time
 from pybit.unified_trading import HTTP
 
 def initialize_bybit_client():
-    API_KEY = os.getenv('BYBIT_API_KEY')
-    API_SECRET = os.getenv('BYBIT_API_SECRET')
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    # Manually set testnet to True or False
+    testnet = False  # Change this to True for testnet or False for mainnet
+    
+    if testnet:
+        api_key = os.getenv('BYBIT_API_KEY_TEST')
+        api_secret = os.getenv('BYBIT_API_SECRET_TEST')
+    else:
+        api_key = os.getenv('BYBIT_API_KEY')
+        api_secret = os.getenv('BYBIT_API_SECRET')
+    
+    if not api_key or not api_secret:
+        raise ValueError("API key or secret not found in environment variables")
+    
     return HTTP(
-        testnet=False,
-        api_key=API_KEY,
-        api_secret=API_SECRET
+        testnet=testnet,
+        api_key=api_key,
+        api_secret=api_secret
     )
 
 def get_account_balance(session):

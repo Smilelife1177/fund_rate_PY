@@ -8,8 +8,10 @@ fi
 
 # Create .env file with Bybit API key and secret placeholders
 cat << EOF > .env
-BYBIT_API_KEY=
-BYBIT_API_SECRET=
+BYBIT_API_KEY =
+BYBIT_API_SECRET =
+BYBIT_API_KEY_TEST =
+BYBIT_API_SECRET_TEST =
 EOF
 
 echo ".env file created successfully"
