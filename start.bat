@@ -1,1 +1,1 @@
-bash .\env_api.sh
+bash .\scripts\env_api.sh
