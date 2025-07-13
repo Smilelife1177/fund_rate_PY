@@ -1,13 +1,14 @@
 import os
-from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox
+from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
-from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping
+from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_bybit_client
 
 class FundingTraderApp(QMainWindow):
-    def __init__(self, session):
+    def __init__(self, session, testnet):
         super().__init__()
         self.session = session
+        self.testnet = testnet
         self.setWindowTitle("Bybit Funding Trader")
         self.setGeometry(100, 100, 400, 500)
 
@@ -50,6 +51,12 @@ class FundingTraderApp(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+
+        # Testnet toggle
+        self.testnet_label = QLabel("Testnet Mode:")
+        self.testnet_checkbox = QCheckBox("Enable Testnet")
+        self.testnet_checkbox.setChecked(self.testnet)
+        self.testnet_checkbox.stateChanged.connect(self.update_testnet)
 
         self.coin_input_label = QLabel("Enter Coin (e.g., BTCUSDT):")
         self.coin_input = QLineEdit()
@@ -109,6 +116,8 @@ class FundingTraderApp(QMainWindow):
         self.refresh_button = QPushButton("Refresh Data")
         self.refresh_button.clicked.connect(self.update_funding_data)
 
+        layout.addWidget(self.testnet_label)
+        layout.addWidget(self.testnet_checkbox)
         layout.addWidget(self.coin_input_label)
         layout.addWidget(self.coin_input)
         layout.addWidget(self.update_coin_button)
@@ -131,6 +140,12 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.ping_label)
         layout.addWidget(self.refresh_button)
         print("UI setup completed")
+
+    def update_testnet(self, state):
+        self.testnet = state == Qt.CheckState.Checked.value
+        print(f"Testnet mode: {'Enabled' if self.testnet else 'Disabled'}")
+        self.session = initialize_bybit_client(self.testnet)
+        self.update_funding_data()  # Refresh data with new session
 
     def handle_update_coin(self):
         symbol = self.coin_input.text()

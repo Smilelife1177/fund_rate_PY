@@ -6,8 +6,9 @@ from logic import initialize_bybit_client
 if __name__ == "__main__":
     print("Starting application...")
     app = QApplication(sys.argv)
-    # Initialize Bybit client
-    session = initialize_bybit_client()
-    window = FundingTraderApp(session)
+    # Initialize Bybit client with default testnet value
+    testnet = False  # Matches default in logic.py
+    session = initialize_bybit_client(testnet)
+    window = FundingTraderApp(session, testnet)
     window.show()
     sys.exit(app.exec())

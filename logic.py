@@ -5,12 +5,8 @@ import math
 import time
 from pybit.unified_trading import HTTP
 
-def initialize_bybit_client():
-    from dotenv import load_dotenv
+def initialize_bybit_client(testnet=False):
     load_dotenv()
-    
-    # Manually set testnet to True or False
-    testnet = False  # Change this to True for testnet or False for mainnet
     
     if testnet:
         api_key = os.getenv('BYBIT_API_KEY_TEST')
