@@ -1,4 +1,4 @@
-Funding_rate_bot
+FUNDING RATE
 
 ![Alt text](images/example.jpg)
 
@@ -11,14 +11,12 @@ Open cmd
 ```
 cd Desktop
 git clone https://github.com/Smilelife1177/fund_rate_PY.git
+code fund_rate_PY
 ```
-
-Open vscode /or smthing else
-Open folder on desktop called "FOUND_RATE_PY"
 
 If you not have python download it [Python download button](https://www.python.org/downloads/)
 
-**3.10+ pls**
+**3.7+ pls**
 
 In vscode you can open terminal in bottom
 
@@ -28,17 +26,14 @@ To download needed libraries enter that command in cmd
 pip install -r requirements.txt
 ```
 
-To start working application needs to starrt "start_api.sh" file to create .env file with your api secrets🐱‍👤
-
+To start working with application type 
 ```
-bash .\start_api.sh
+.\start.bat
 ```
 
 It create an .env file with som,e texts, u need to put your apis keys to that file after "=" 
 
-In folders chose your exchange
-
-And run code by pressing "F5"
+Run code by pressing "F5"
 
 ## Credits
 
