@@ -2,17 +2,18 @@ import os
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
-from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_bybit_client
+from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client
 
 class FundingTraderApp(QMainWindow):
-    def __init__(self, session, testnet):
+    def __init__(self, session, testnet, exchange):
         super().__init__()
         self.session = session
         self.testnet = testnet
-        self.setWindowTitle("Bybit Funding Trader")
+        self.exchange = exchange
+        self.setWindowTitle(f"{self.exchange} Funding Trader")
         self.setGeometry(100, 100, 400, 500)
 
-        icon_path = r"images\log.ico"  # Replace with your new icon file path
+        icon_path = r"images\log.ico"
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else:
@@ -20,7 +21,7 @@ class FundingTraderApp(QMainWindow):
 
         # Trading parameters
         self.selected_symbol = "HYPERUSDT"
-        self.funding_interval_hours = 1.0
+        self.funding_interval_hours = 1.0 if self.exchange == "Bybit" else 8.0
         self.entry_time_seconds = 5.0
         self.qty = 45
         self.profit_percentage = 1.0
@@ -52,6 +53,13 @@ class FundingTraderApp(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
+        # Exchange selector
+        self.exchange_label = QLabel("Exchange:")
+        self.exchange_combobox = QComboBox()
+        self.exchange_combobox.addItems(["Bybit", "Binance"])
+        self.exchange_combobox.setCurrentText(self.exchange)
+        self.exchange_combobox.currentTextChanged.connect(self.update_exchange)
+
         # Testnet toggle
         self.testnet_label = QLabel("Testnet Mode:")
         self.testnet_checkbox = QCheckBox("Enable Testnet")
@@ -67,7 +75,7 @@ class FundingTraderApp(QMainWindow):
 
         self.funding_interval_label = QLabel("Funding Interval (hours):")
         self.funding_interval_combobox = QComboBox()
-        self.funding_intervals = ["0.01", "1", "4", "8"]
+        self.funding_intervals = ["0.01", "1", "4", "8"] if self.exchange == "Bybit" else ["8"]
         self.funding_interval_combobox.addItems(self.funding_intervals)
         self.funding_interval_combobox.setCurrentText(str(int(self.funding_interval_hours)))
         self.funding_interval_combobox.currentTextChanged.connect(self.update_funding_interval)
@@ -116,6 +124,8 @@ class FundingTraderApp(QMainWindow):
         self.refresh_button = QPushButton("Refresh Data")
         self.refresh_button.clicked.connect(self.update_funding_data)
 
+        layout.addWidget(self.exchange_label)
+        layout.addWidget(self.exchange_combobox)
         layout.addWidget(self.testnet_label)
         layout.addWidget(self.testnet_checkbox)
         layout.addWidget(self.coin_input_label)
@@ -141,11 +151,26 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.refresh_button)
         print("UI setup completed")
 
+    def update_exchange(self, exchange):
+        self.exchange = exchange
+        self.setWindowTitle(f"{self.exchange} Funding Trader")
+        self.funding_interval_hours = 1.0 if self.exchange == "Bybit" else 8.0
+        # Block signals to prevent empty string emission
+        self.funding_interval_combobox.blockSignals(True)
+        self.funding_interval_combobox.clear()
+        self.funding_intervals = ["0.01", "1", "4", "8"] if self.exchange == "Bybit" else ["8"]
+        self.funding_interval_combobox.addItems(self.funding_intervals)
+        self.funding_interval_combobox.setCurrentText(str(int(self.funding_interval_hours)))
+        self.funding_interval_combobox.blockSignals(False)
+        self.session = initialize_client(self.exchange, self.testnet)
+        self.update_funding_data()
+        print(f"Switched to exchange: {self.exchange}")
+
     def update_testnet(self, state):
         self.testnet = state == Qt.CheckState.Checked.value
         print(f"Testnet mode: {'Enabled' if self.testnet else 'Disabled'}")
-        self.session = initialize_bybit_client(self.testnet)
-        self.update_funding_data()  # Refresh data with new session
+        self.session = initialize_client(self.exchange, self.testnet)
+        self.update_funding_data()
 
     def handle_update_coin(self):
         symbol = self.coin_input.text()
@@ -157,9 +182,10 @@ class FundingTraderApp(QMainWindow):
         self.update_funding_data()
 
     def update_funding_interval(self, value):
-        self.funding_interval_hours = float(value)
-        print(f"Updated funding interval: {self.funding_interval_hours} hours")
-        self.update_funding_data()
+        if value:  # Only process non-empty values
+            self.funding_interval_hours = float(value)
+            print(f"Updated funding interval: {self.funding_interval_hours} hours")
+            self.update_funding_data()
 
     def update_entry_time(self, value):
         self.entry_time_seconds = value
@@ -186,8 +212,8 @@ class FundingTraderApp(QMainWindow):
         self.update_leveraged_balance_label()
 
     def update_volume_label(self):
-        current_price = get_current_price(self.session, self.selected_symbol)
-        balance = get_account_balance(self.session)
+        current_price = get_current_price(self.session, self.selected_symbol, self.exchange)
+        balance = get_account_balance(self.session, self.exchange)
         leveraged_balance = balance * self.leverage if balance is not None and self.leverage is not None else None
         if current_price is not None and self.qty is not None:
             volume = self.qty * current_price
@@ -201,7 +227,7 @@ class FundingTraderApp(QMainWindow):
             self.volume_label.setStyleSheet("color: black;")
 
     def update_leveraged_balance_label(self):
-        balance = get_account_balance(self.session)
+        balance = get_account_balance(self.session, self.exchange)
         if balance is not None and self.leverage is not None:
             leveraged_balance = balance * self.leverage
             self.leveraged_balance_label.setText(f"Leveraged Balance: ${leveraged_balance:.2f} USDT")
@@ -209,7 +235,7 @@ class FundingTraderApp(QMainWindow):
             self.leveraged_balance_label.setText("Leveraged Balance: N/A")
 
     def update_ping(self):
-        update_ping(self.session, self.ping_label)
+        update_ping(self.session, self.ping_label, self.exchange)
 
     def check_funding_time(self):
         if not self.funding_data:
@@ -234,12 +260,12 @@ class FundingTraderApp(QMainWindow):
 
         if self.entry_time_seconds - 1.0 <= time_to_funding <= self.entry_time_seconds and not self.open_order_id:
             side = "Buy" if funding_rate > 0 else "Sell"
-            self.open_order_id = place_market_order(self.session, symbol, side, self.qty)
+            self.open_order_id = place_market_order(self.session, symbol, side, self.qty, self.exchange)
             if self.open_order_id:
                 QTimer.singleShot(int((time_to_funding - 1.0) * 1000), lambda: self.capture_funding_price(symbol, side))
 
     def capture_funding_price(self, symbol, side):
-        self.funding_time_price = get_current_price(self.session, symbol)
+        self.funding_time_price = get_current_price(self.session, symbol, self.exchange)
         if self.funding_time_price is None:
             print(f"Failed to get price at funding time for {symbol}")
             self.open_order_id = None
@@ -247,22 +273,22 @@ class FundingTraderApp(QMainWindow):
 
         limit_price = (self.funding_time_price * (1 + self.profit_percentage / 100) if side == "Buy" 
                       else self.funding_time_price * (1 - self.profit_percentage / 100))
-        tick_size = get_symbol_info(self.session, symbol)
-        self.place_limit_close_order(symbol, side, self.qty, limit_price, tick_size)
+        tick_size = get_symbol_info(self.session, symbol, self.exchange)
+        self.place_limit_close_order(symbol, side, self.qty, limit_price, tick_size, self.exchange)
         self.open_order_id = None
 
     def update_funding_data(self):
         try:
             print("Updating funding data...")
-            self.funding_data = get_funding_data(self.session, self.selected_symbol)
+            self.funding_data = get_funding_data(self.session, self.selected_symbol, self.exchange)
 
-            current_price = get_current_price(self.session, self.selected_symbol)
+            current_price = get_current_price(self.session, self.selected_symbol, self.exchange)
             if current_price is not None:
                 self.price_label.setText(f"Current Price: ${current_price:.6f}")
             else:
                 self.price_label.setText("Current Price: N/A")
 
-            balance = get_account_balance(self.session)
+            balance = get_account_balance(self.session, self.exchange)
             if balance is not None:
                 self.balance_label.setText(f"Account Balance: ${balance:.2f} USDT")
                 self.update_leveraged_balance_label()
