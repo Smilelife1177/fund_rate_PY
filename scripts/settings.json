@@ -1,0 +1,10 @@
+{
+    "selected_symbol": "HYPERUSDT",
+    "funding_interval_hours": 1.0,
+    "entry_time_seconds": 9.0,
+    "qty": 45.0,
+    "profit_percentage": 2.15,
+    "leverage": 5.0,
+    "exchange": "Bybit",
+    "testnet": false
+}

@@ -1,4 +1,5 @@
 import os
+import json
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
@@ -19,16 +20,8 @@ class FundingTraderApp(QMainWindow):
         else:
             print(f"Icon file not found at: {icon_path}")
 
-        # Trading parameters
-        self.selected_symbol = "HYPERUSDT"
-        self.funding_interval_hours = 1.0 if self.exchange == "Bybit" else 8.0
-        self.entry_time_seconds = 5.0
-        self.qty = 45
-        self.profit_percentage = 1.0
-        self.leverage = 5.0
-        self.funding_data = None
-        self.open_order_id = None
-        self.funding_time_price = None
+        # Load settings from file or use defaults
+        self.load_settings()
 
         # Setup UI
         self.setup_ui()
@@ -46,6 +39,74 @@ class FundingTraderApp(QMainWindow):
         # Initial data update
         print("Initializing application...")
         self.update_funding_data()
+
+    def load_settings(self):
+        """Load settings from settings.json or set defaults."""
+        default_settings = {
+            "selected_symbol": "HYPERUSDT",
+            "funding_interval_hours": 1.0 if self.exchange == "Bybit" else 8.0,
+            "entry_time_seconds": 5.0,
+            "qty": 45.0,
+            "profit_percentage": 1.0,
+            "leverage": 5.0,
+            "exchange": self.exchange,
+            "testnet": self.testnet
+        }
+        try:
+            if os.path.exists(r"scripts\settings.json"): #r"scripts\settings.json"
+                with open(r"scripts\settings.json", "r") as f:
+                    settings = json.load(f)
+                    self.selected_symbol = settings.get("selected_symbol", default_settings["selected_symbol"])
+                    self.funding_interval_hours = settings.get("funding_interval_hours", default_settings["funding_interval_hours"])
+                    self.entry_time_seconds = settings.get("entry_time_seconds", default_settings["entry_time_seconds"])
+                    self.qty = settings.get("qty", default_settings["qty"])
+                    self.profit_percentage = settings.get("profit_percentage", default_settings["profit_percentage"])
+                    self.leverage = settings.get("leverage", default_settings["leverage"])
+                    self.exchange = settings.get("exchange", default_settings["exchange"])
+                    self.testnet = settings.get("testnet", default_settings["testnet"])
+                    print("Settings loaded successfully")
+            else:
+                print("No settings file found, using defaults")
+                self.selected_symbol = default_settings["selected_symbol"]
+                self.funding_interval_hours = default_settings["funding_interval_hours"]
+                self.entry_time_seconds = default_settings["entry_time_seconds"]
+                self.qty = default_settings["qty"]
+                self.profit_percentage = default_settings["profit_percentage"]
+                self.leverage = default_settings["leverage"]
+                self.exchange = default_settings["exchange"]
+                self.testnet = default_settings["testnet"]
+        except Exception as e:
+            print(f"Error loading settings: {e}, using defaults")
+            self.selected_symbol = default_settings["selected_symbol"]
+            self.funding_interval_hours = default_settings["funding_interval_hours"]
+            self.entry_time_seconds = default_settings["entry_time_seconds"]
+            self.qty = default_settings["qty"]
+            self.profit_percentage = default_settings["profit_percentage"]
+            self.leverage = default_settings["leverage"]
+            self.exchange = default_settings["exchange"]
+            self.testnet = default_settings["testnet"]
+        self.funding_data = None
+        self.open_order_id = None
+        self.funding_time_price = None
+
+    def save_settings(self):
+        """Save current settings to settings.json."""
+        settings = {
+            "selected_symbol": self.selected_symbol,
+            "funding_interval_hours": self.funding_interval_hours,
+            "entry_time_seconds": self.entry_time_seconds,
+            "qty": self.qty,
+            "profit_percentage": self.profit_percentage,
+            "leverage": self.leverage,
+            "exchange": self.exchange,
+            "testnet": self.testnet
+        }
+        try:
+            with open(r"scripts\settings.json", "w") as f:
+                json.dump(settings, f, indent=4)
+                print("Settings saved successfully")
+        except Exception as e:
+            print(f"Error saving settings: {e}")
 
     def setup_ui(self):
         print("Setting up UI...")
@@ -77,7 +138,7 @@ class FundingTraderApp(QMainWindow):
         self.funding_interval_combobox = QComboBox()
         self.funding_intervals = ["0.01", "1", "4", "8"] if self.exchange == "Bybit" else ["8"]
         self.funding_interval_combobox.addItems(self.funding_intervals)
-        self.funding_interval_combobox.setCurrentText(str(int(self.funding_interval_hours)))
+        self.funding_interval_combobox.setCurrentText(str(self.funding_interval_hours))
         self.funding_interval_combobox.currentTextChanged.connect(self.update_funding_interval)
 
         self.entry_time_label = QLabel("Entry Time Before Funding (seconds):")
@@ -160,9 +221,10 @@ class FundingTraderApp(QMainWindow):
         self.funding_interval_combobox.clear()
         self.funding_intervals = ["0.01", "1", "4", "8"] if self.exchange == "Bybit" else ["8"]
         self.funding_interval_combobox.addItems(self.funding_intervals)
-        self.funding_interval_combobox.setCurrentText(str(int(self.funding_interval_hours)))
+        self.funding_interval_combobox.setCurrentText(str(self.funding_interval_hours))
         self.funding_interval_combobox.blockSignals(False)
         self.session = initialize_client(self.exchange, self.testnet)
+        self.save_settings()
         self.update_funding_data()
         print(f"Switched to exchange: {self.exchange}")
 
@@ -170,6 +232,7 @@ class FundingTraderApp(QMainWindow):
         self.testnet = state == Qt.CheckState.Checked.value
         print(f"Testnet mode: {'Enabled' if self.testnet else 'Disabled'}")
         self.session = initialize_client(self.exchange, self.testnet)
+        self.save_settings()
         self.update_funding_data()
 
     def handle_update_coin(self):
@@ -179,36 +242,43 @@ class FundingTraderApp(QMainWindow):
     def update_symbol(self, symbol):
         self.selected_symbol = symbol.strip().upper()
         print(f"Updated symbol: {self.selected_symbol}")
+        self.save_settings()
         self.update_funding_data()
 
     def update_funding_interval(self, value):
         if value:  # Only process non-empty values
             self.funding_interval_hours = float(value)
             print(f"Updated funding interval: {self.funding_interval_hours} hours")
+            self.save_settings()
             self.update_funding_data()
 
     def update_entry_time(self, value):
         self.entry_time_seconds = value
         print(f"Updated entry time: {self.entry_time_seconds} seconds")
+        self.save_settings()
 
     def update_qty(self, value):
         self.qty = value
         print(f"Updated order quantity: {self.qty}")
+        self.save_settings()
         self.update_volume_label()
 
     def update_profit_percentage(self, value):
         self.profit_percentage = value
         self.profit_percentage_slider.setValue(int(value * 100))
         print(f"Updated profit percentage: {self.profit_percentage}%")
+        self.save_settings()
 
     def update_profit_percentage_from_slider(self, value):
         self.profit_percentage = value / 100.0
         self.profit_percentage_spinbox.setValue(self.profit_percentage)
         print(f"Updated profit percentage from slider: {self.profit_percentage}%")
+        self.save_settings()
 
     def update_leverage(self, value):
         self.leverage = value
         print(f"Updated leverage: {self.leverage}x")
+        self.save_settings()
         self.update_leveraged_balance_label()
 
     def update_volume_label(self):
@@ -330,4 +400,5 @@ class FundingTraderApp(QMainWindow):
     def closeEvent(self, event):
         self.timer.stop()
         self.ping_timer.stop()
+        self.save_settings()
         event.accept()
