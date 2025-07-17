@@ -26,6 +26,17 @@ class FundingTraderApp(QMainWindow):
         # Setup UI
         self.setup_ui()
 
+        # Sync funding interval combobox after loading settings
+        self.funding_interval_combobox.blockSignals(True)
+        self.funding_interval_combobox.clear()
+        self.funding_intervals = ["0.01", "1", "4", "8"] if self.exchange == "Bybit" else ["8"]
+        self.funding_interval_combobox.addItems(self.funding_intervals)
+        formatted_interval = str(float(self.funding_interval_hours))
+        if formatted_interval.endswith(".0"):
+            formatted_interval = formatted_interval[:-2]
+        self.funding_interval_combobox.setCurrentText(formatted_interval)
+        self.funding_interval_combobox.blockSignals(False)
+
         # Timer for checking funding time
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_funding_time)
