@@ -1,6 +1,6 @@
 {
     "selected_symbol": "BLASTUSDT",
-    "funding_interval_hours": 4.0,
+    "funding_interval_hours": 8.0,
     "entry_time_seconds": 9.0,
     "qty": 2999.0,
     "profit_percentage": 0.93,

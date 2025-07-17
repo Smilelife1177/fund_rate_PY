@@ -1,3 +1,4 @@
 .env
 bybit_users.db
 __pycache__
+/scripts/settings.json
