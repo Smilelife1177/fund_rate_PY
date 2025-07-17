@@ -1,0 +1,32 @@
++---------------------+---------------------+---------------------+---------------------+---------------------+
+| Процент   | Фандинг  | Прибиль (%) | Дохід ($) | Комісія | Об'єм ($) | В сделкі ? | Тікет |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+|           |           |           |           |           |           |           |           |
+|[  0.17% ] |[ -0.035$ ]|[  0.038$ ]| [ 0.015$ ]|[ 0.017$] |[  8.55$ ] | [   	1м, 46с    ] | BLASTUSDT  |
+|           |           |           |           |           |           |           |           |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+
+Time to next funding for BLASTUSDT: 00:00:09
+Time to next funding for BLASTUSDT: 00:00:08
+Placing market Sell order for BLASTUSDT with quantity 2999.0...
+Market order placed: {'orderId': '587d0995-9ebe-4d2c-8860-c1fb88d104fc', 'orderLinkId': ''}
+Time to next funding for BLASTUSDT: 00:00:07
+Time to next funding for BLASTUSDT: 00:00:06
+Time to next funding for BLASTUSDT: 00:00:05
+Time to next funding for BLASTUSDT: 00:00:04
+Time to next funding for BLASTUSDT: 00:00:03
+Pinging Bybit server...
+Ping: 217.79 ms
+Time to next funding for BLASTUSDT: 00:00:02
+Time to next funding for BLASTUSDT: 00:00:01
+Fetching current price for BLASTUSDT...
+Raw price fetched for BLASTUSDT: 0.002844
+Tick size for BLASTUSDT: 1e-06
+Traceback (most recent call last):
+  File "C:\Users\shapr\Desktop\fund_rate_PY\gui.py", line 335, in <lambda>
+    QTimer.singleShot(int((time_to_funding - 1.0) * 1000), lambda: self.capture_funding_price(symbol, side))  
+                                                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^   
+  File "C:\Users\shapr\Desktop\fund_rate_PY\gui.py", line 347, in capture_funding_price
+    self.place_limit_close_order(symbol, side, self.qty, limit_price, tick_size, self.exchange)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'FundingTraderApp' object has no attribute 'place_limit_close_order'
