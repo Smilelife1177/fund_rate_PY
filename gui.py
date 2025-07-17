@@ -344,7 +344,7 @@ class FundingTraderApp(QMainWindow):
         limit_price = (self.funding_time_price * (1 + self.profit_percentage / 100) if side == "Buy" 
                       else self.funding_time_price * (1 - self.profit_percentage / 100))
         tick_size = get_symbol_info(self.session, symbol, self.exchange)
-        self.place_limit_close_order(symbol, side, self.qty, limit_price, tick_size, self.exchange)
+        place_limit_close_order(self.session, symbol, side, self.qty, limit_price, tick_size, self.exchange)
         self.open_order_id = None
 
     def update_funding_data(self):
