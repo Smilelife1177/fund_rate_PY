@@ -1,3 +1,4 @@
 1/ try to change commision to be smaller 
 2/percentage of my value
-3/add other exchange (whitebit-)
+3/add other exchange (whitebit)
+4/leverege setup

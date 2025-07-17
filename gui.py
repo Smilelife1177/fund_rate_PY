@@ -45,7 +45,7 @@ class FundingTraderApp(QMainWindow):
         # Timer for updating ping
         self.ping_timer = QTimer()
         self.ping_timer.timeout.connect(self.update_ping)
-        self.ping_timer.start(15000)
+        self.ping_timer.start(30000)
 
         # Initial data update
         print("Initializing application...")
@@ -59,7 +59,7 @@ class FundingTraderApp(QMainWindow):
             "entry_time_seconds": 5.0,
             "qty": 45.0,
             "profit_percentage": 1.0,
-            "leverage": 5.0,
+            "leverage": 1.0,
             "exchange": self.exchange,
             "testnet": self.testnet
         }
