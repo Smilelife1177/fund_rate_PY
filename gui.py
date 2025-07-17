@@ -1,12 +1,11 @@
 import os
 import json
-from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox
+from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, QMessageBox
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
-from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client
+from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions
 
 class FundingTraderApp(QMainWindow):
-    # Словники перекладів
     translations = {
         "en": {
             "window_title": "{} Funding Trader",
@@ -27,28 +26,40 @@ class FundingTraderApp(QMainWindow):
             "volume_label": "Order Volume: N/A",
             "ping_label": "Ping: N/A",
             "refresh_button": "Refresh Data",
-            "language_label": "Language:"
+            "language_label": "Language:",
+            "close_all_trades_button": "Close All Trades",
+            "close_all_trades_warning_title": "Confirm Close All Trades",
+            "close_all_trades_warning_text": "Are you sure you want to close all open trades? This action cannot be undone.",
+            "close_all_trades_success": "All open trades have been closed.",
+            "close_all_trades_no_positions": "No open trades to close.",
+            "close_all_trades_error": "Error closing trades: {}"
         },
         "uk": {
             "window_title": "{} Трейдер Фінансування",
             "exchange_label": "Біржа:",
-            "testnet_label": "Режим демо-торгівлі:",
-            "testnet_checkbox": "Увімкнути демо-торгівлю",
-            "coin_input_label": "Введіть монету:",
+            "testnet_label": "Режим тестування:",
+            "testnet_checkbox": "Увімкнути тестовий режим",
+            "coin_input_label": "Введіть монету (наприклад, BTCUSDT):",
             "update_coin_button": "Оновити монету",
             "funding_interval_label": "Інтервал фінансування (години):",
-            "entry_time_label": "Час входу до угоди (секунди):",
-            "qty_label": "Кількість монет:",
-            "profit_percentage_label": "Відсоток прибутку (%):",
+            "entry_time_label": "Час входу до фінансування (секунди):",
+            "qty_label": "Кількість замовлення (qty):",
+            "profit_percentage_label": "Бажаний відсоток прибутку (%):",
             "leverage_label": "Кредитне плече (x):",
-            "funding_info_label": "Ставка фінансування: N/A | Час до наступного фінансування:",
+            "funding_info_label": "Ставка фінансування: N/A | Час до наступного фінансування: N/A",
             "price_label": "Поточна ціна: N/A",
             "balance_label": "Баланс рахунку: N/A",
             "leveraged_balance_label": "Баланс з урахуванням плеча: N/A",
-            "volume_label": "Обєм угоди: N/A",
+            "volume_label": "Обсяг замовлення: N/A",
             "ping_label": "Пінг: N/A",
             "refresh_button": "Оновити дані",
-            "language_label": "Мова:"
+            "language_label": "Мова:",
+            "close_all_trades_button": "Закрити всі угоди",
+            "close_all_trades_warning_title": "Підтвердження закриття всіх угод",
+            "close_all_trades_warning_text": "Ви впевнені, що хочете закрити всі відкриті угоди? Цю дію неможливо скасувати.",
+            "close_all_trades_success": "Усі відкриті угоди закрито.",
+            "close_all_trades_no_positions": "Немає відкритих угод для закриття.",
+            "close_all_trades_error": "Помилка при закритті угод: {}"
         }
     }
 
@@ -258,6 +269,11 @@ class FundingTraderApp(QMainWindow):
         self.refresh_button = QPushButton(self.translations[self.language]["refresh_button"])
         self.refresh_button.clicked.connect(self.update_funding_data)
 
+        # Close all trades button
+        self.close_all_trades_button = QPushButton(self.translations[self.language]["close_all_trades_button"])
+        self.close_all_trades_button.setStyleSheet("background-color: red; color: white; font-weight: bold;")
+        self.close_all_trades_button.clicked.connect(self.handle_close_all_trades)
+
         layout.addWidget(self.language_label)
         layout.addWidget(self.language_combobox)
         layout.addWidget(self.exchange_label)
@@ -285,7 +301,35 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(self.volume_label)
         layout.addWidget(self.ping_label)
         layout.addWidget(self.refresh_button)
+        layout.addWidget(self.close_all_trades_button)
         print("UI setup completed")
+
+    def handle_close_all_trades(self):
+            """Show confirmation dialog before closing all trades."""
+            warning = QMessageBox()
+            warning.setWindowTitle(self.translations[self.language]["close_all_trades_warning_title"])
+            warning.setText(self.translations[self.language]["close_all_trades_warning_text"])
+            warning.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            warning.setDefaultButton(QMessageBox.StandardButton.No)
+            if self.language == "uk":
+                warning.button(QMessageBox.StandardButton.Yes).setText("Так")
+                warning.button(QMessageBox.StandardButton.No).setText("Ні")
+            else:
+                warning.button(QMessageBox.StandardButton.Yes).setText("Yes")
+                warning.button(QMessageBox.StandardButton.No).setText("No")
+            
+            if warning.exec() == QMessageBox.StandardButton.Yes:
+                success = close_all_positions(self.session, self.exchange)
+                result = QMessageBox()
+                if success:
+                    self.open_order_id = None  # Reset open order ID
+                    result.setWindowTitle("Success" if self.language == "en" else "Успіх")
+                    result.setText(self.translations[self.language]["close_all_trades_success"])
+                else:
+                    result.setWindowTitle("Info" if self.language == "en" else "Інформація")
+                    result.setText(self.translations[self.language]["close_all_trades_no_positions"])
+                result.exec()
+                self.update_funding_data()  # Refresh UI after closing
 
     def update_language(self, language_text):
         """Update the language of the UI."""
@@ -303,6 +347,7 @@ class FundingTraderApp(QMainWindow):
         self.qty_label.setText(self.translations[self.language]["qty_label"])
         self.profit_percentage_label.setText(self.translations[self.language]["profit_percentage_label"])
         self.leverage_label.setText(self.translations[self.language]["leverage_label"])
+        self.close_all_trades_button.setText(self.translations[self.language]["close_all_trades_button"])
         # Динамічні мітки оновлюються при виклику update_funding_data
         self.save_settings()
         self.update_funding_data()

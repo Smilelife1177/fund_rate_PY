@@ -4,7 +4,9 @@ FUNDING RATE
 
 ## Tutorial
 
-Download GIT [Git download button](https://git-scm.com/downloads)
+If you not have GIT download it [Git download button](https://git-scm.com/downloads)
+
+If you not have python download it [Python download button](https://www.python.org/downloads/)
 
 Open cmd
 
@@ -13,8 +15,6 @@ cd Desktop
 git clone https://github.com/Smilelife1177/fund_rate_PY.git
 code fund_rate_PY
 ```
-
-If you not have python download it [Python download button](https://www.python.org/downloads/)
 
 **3.7+ pls**
 
