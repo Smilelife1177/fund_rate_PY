@@ -1,10 +1,10 @@
 {
     "selected_symbol": "BLASTUSDT",
-    "funding_interval_hours": 4.0,
+    "funding_interval_hours": 0.01,
     "entry_time_seconds": 9.0,
-    "qty": 2999.0,
-    "profit_percentage": 0.93,
-    "leverage": 5.0,
+    "qty": 10000.0,
+    "profit_percentage": 0.43,
+    "leverage": 3.0,
     "exchange": "Bybit",
     "testnet": true,
     "language": "uk"

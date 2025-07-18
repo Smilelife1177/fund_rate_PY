@@ -213,20 +213,20 @@ def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchan
         print(f"Error placing limit order: {e}")
         return None
 
-def close_all_positions(session, exchange):
+def close_all_positions(session, exchange, symbol=None):
     """Close all open positions on the exchange."""
     try:
         print(f"Closing all open positions on {exchange}...")
         if exchange == "Bybit":
-            # Отримуємо всі відкриті позиції
-            response = session.get_positions(category="linear")
+            # Додаємо settleCoin для лінійних контрактів
+            response = session.get_positions(category="linear", settleCoin="USDT")
+            print(f"Bybit positions response: {response}")
             if response["retCode"] == 0 and response["result"]["list"]:
                 for position in response["result"]["list"]:
                     symbol = position["symbol"]
                     qty = float(position["size"])
                     side = "Sell" if position["side"] == "Buy" else "Buy"
                     if qty > 0:
-                        # Розміщуємо ринковий ордер для закриття
                         response_order = session.place_order(
                             category="linear",
                             symbol=symbol,
@@ -242,18 +242,17 @@ def close_all_positions(session, exchange):
                             print(f"Error closing position for {symbol}: {response_order['retMsg']}")
                 return True
             else:
-                print("No open positions found or error fetching positions")
+                print(f"No open positions or error: {response.get('retMsg', 'No error message')}")
                 return False
         else:  # Binance
-            # Отримуємо всі відкриті позиції
             response = session.get_position_information()
+            print(f"Binance positions response: {response}")
             if response:
                 for position in response:
                     symbol = position["symbol"]
                     qty = abs(float(position["positionAmt"]))
                     side = "Sell" if float(position["positionAmt"]) > 0 else "Buy"
                     if qty > 0:
-                        # Розміщуємо ринковий ордер для закриття
                         response_order = session.create_order(
                             symbol=symbol,
                             side=side.upper(),

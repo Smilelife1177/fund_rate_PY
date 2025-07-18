@@ -305,31 +305,32 @@ class FundingTraderApp(QMainWindow):
         print("UI setup completed")
 
     def handle_close_all_trades(self):
-            """Show confirmation dialog before closing all trades."""
-            warning = QMessageBox()
-            warning.setWindowTitle(self.translations[self.language]["close_all_trades_warning_title"])
-            warning.setText(self.translations[self.language]["close_all_trades_warning_text"])
-            warning.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            warning.setDefaultButton(QMessageBox.StandardButton.No)
-            if self.language == "uk":
-                warning.button(QMessageBox.StandardButton.Yes).setText("Так")
-                warning.button(QMessageBox.StandardButton.No).setText("Ні")
+        """Show confirmation dialog before closing all trades."""
+        warning = QMessageBox()
+        warning.setWindowTitle(self.translations[self.language]["close_all_trades_warning_title"])
+        warning.setText(self.translations[self.language]["close_all_trades_warning_text"])
+        warning.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        warning.setDefaultButton(QMessageBox.StandardButton.No)
+        if self.language == "uk":
+            warning.button(QMessageBox.StandardButton.Yes).setText("Так")
+            warning.button(QMessageBox.StandardButton.No).setText("Ні")
+        else:
+            warning.button(QMessageBox.StandardButton.Yes).setText("Yes")
+            warning.button(QMessageBox.StandardButton.No).setText("No")
+        
+        if warning.exec() == QMessageBox.StandardButton.Yes:
+            print(f"Calling close_all_positions for {self.exchange} with symbol {self.selected_symbol}")
+            success = close_all_positions(self.session, self.exchange, symbol=self.selected_symbol)
+            result = QMessageBox()
+            if success:
+                self.open_order_id = None  # Reset open order ID
+                result.setWindowTitle("Success" if self.language == "en" else "Успіх")
+                result.setText(self.translations[self.language]["close_all_trades_success"])
             else:
-                warning.button(QMessageBox.StandardButton.Yes).setText("Yes")
-                warning.button(QMessageBox.StandardButton.No).setText("No")
-            
-            if warning.exec() == QMessageBox.StandardButton.Yes:
-                success = close_all_positions(self.session, self.exchange)
-                result = QMessageBox()
-                if success:
-                    self.open_order_id = None  # Reset open order ID
-                    result.setWindowTitle("Success" if self.language == "en" else "Успіх")
-                    result.setText(self.translations[self.language]["close_all_trades_success"])
-                else:
-                    result.setWindowTitle("Info" if self.language == "en" else "Інформація")
-                    result.setText(self.translations[self.language]["close_all_trades_no_positions"])
-                result.exec()
-                self.update_funding_data()  # Refresh UI after closing
+                result.setWindowTitle("Error" if self.language == "en" else "Помилка")
+                result.setText(self.translations[self.language]["close_all_trades_error"].format("No positions found or API error"))
+            result.exec()
+            self.update_funding_data()  # Refresh UI after closing
 
     def update_language(self, language_text):
         """Update the language of the UI."""
