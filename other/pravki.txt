@@ -2,3 +2,10 @@
 2/percentage of my value
 3/add other exchange (whitebit)
 4/leverege setup
+
+nuitka --follow-imports --standalone --jobs=4 --onefile --disable-console --include-data-files=images/log.ico=images --include-data-files=scripts/settings.json=scripts --include-data-files=.env=config --show-progress main.py
+
+nuitka --follow-imports --standalone --jobs=4 --onefile --disable-console --include-data-files=images/log.ico=images --include-data-files=scripts/settings.json=scripts --include-data-files=.env=config --show-progress --mingw64="C:\mingw64\w64devkit\bin" main.py
+###
+py -3.12 -m nuitka --follow-imports --standalone --jobs=4 --onefile --disable-console --include-data-files=images/log.ico=images --include-data-files=scripts/settings.json=scripts --include-data-files=.env=config --show-progress main.py
+###
