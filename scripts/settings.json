@@ -1,11 +1,11 @@
 {
-    "selected_symbol": "BLASTUSDT",
-    "funding_interval_hours": 0.01,
+    "selected_symbol": "UMAUSDT",
+    "funding_interval_hours": 1.0,
     "entry_time_seconds": 9.0,
-    "qty": 10000.0,
-    "profit_percentage": 0.43,
-    "leverage": 3.0,
+    "qty": 4.0,
+    "profit_percentage": 0.89,
+    "leverage": 5.0,
     "exchange": "Bybit",
-    "testnet": true,
+    "testnet": false,
     "language": "uk"
 }
