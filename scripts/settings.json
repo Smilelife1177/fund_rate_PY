@@ -1,11 +1,15 @@
 {
-    "selected_symbol": "UMAUSDT",
-    "funding_interval_hours": 1.0,
-    "entry_time_seconds": 9.0,
-    "qty": 4.0,
-    "profit_percentage": 0.89,
-    "leverage": 5.0,
-    "exchange": "Bybit",
-    "testnet": false,
+    "tabs": [
+        {
+            "selected_symbol": "HYPERUSDT",
+            "funding_interval_hours": 1.0,
+            "entry_time_seconds": 5.0,
+            "qty": 45.0,
+            "profit_percentage": 1.0,
+            "leverage": 1.0,
+            "exchange": "Bybit",
+            "testnet": false
+        }
+    ],
     "language": "uk"
 }
