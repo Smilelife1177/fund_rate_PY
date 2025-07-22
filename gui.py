@@ -4,6 +4,8 @@ from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLin
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
 from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions
+from PyQt6.QtWidgets import QTabBar
+import time
 
 class FundingTraderApp(QMainWindow):
     translations = {
@@ -99,11 +101,15 @@ class FundingTraderApp(QMainWindow):
         # List to store tab_data for each tab
         self.tab_data_list = []
 
-        # Add new tab button
+        # Add new tab button as a tab
         self.add_tab_button = QToolButton()
         self.add_tab_button.setText("+")
+        self.add_tab_button.setFixedWidth(30)
+        self.add_tab_button.setStyleSheet("font-weight: bold; font-size: 16px;")
         self.add_tab_button.clicked.connect(self.add_new_tab)
-        self.tab_widget.setCornerWidget(self.add_tab_button, Qt.Corner.TopRightCorner)
+        self.tab_widget.addTab(QWidget(), "+")
+        self.tab_widget.setTabEnabled(self.tab_widget.count() - 1, False)
+        self.tab_widget.tabBar().setTabButton(self.tab_widget.count() - 1, QTabBar.ButtonPosition.RightSide, self.add_tab_button)
 
         # Add initial tab with loaded settings
         self.tab_count = 0
@@ -124,6 +130,7 @@ class FundingTraderApp(QMainWindow):
         # Save settings
         self.save_settings()
 
+    # Modify add_new_tab to maintain "+" tab position
     def add_new_tab(self, session=None, testnet=None, exchange=None, settings=None):
         """Add a new tab with its own settings and UI."""
         self.tab_count += 1
@@ -131,7 +138,7 @@ class FundingTraderApp(QMainWindow):
         tab_layout = QVBoxLayout(tab)
         tab_data = self.create_tab_ui(tab_layout, session, testnet, exchange, settings)
         self.tab_data_list.append(tab_data)
-        self.tab_widget.addTab(tab, self.translations[self.language]["tab_title"].format(self.tab_count))
+        self.tab_widget.insertTab(self.tab_widget.count() - 1, tab, self.translations[self.language]["tab_title"].format(self.tab_count))
         self.tab_widget.setCurrentWidget(tab)
         tab_data["tab_index"] = self.tab_count
         return tab_data
@@ -652,61 +659,67 @@ class FundingTraderApp(QMainWindow):
             result.exec()
             self.update_tab_funding_data(tab_data)
 
-    def update_tab_funding_data(self, tab_data):
-        """Update funding data for a specific tab."""
+    # Add a retry mechanism to update_tab_funding_data
+    def update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2):
+        """Update funding data for a specific tab with retry mechanism."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping funding data update")
             return
-        try:
-            tab_index = self.tab_data_list.index(tab_data) + 1
-            print(f"Tab {tab_index}: Updating funding data...")
-            tab_data["funding_data"] = get_funding_data(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
+        for attempt in range(retry_count):
+            try:
+                tab_index = self.tab_data_list.index(tab_data) + 1
+                print(f"Tab {tab_index}: Updating funding data (attempt {attempt + 1}/{retry_count})...")
+                tab_data["funding_data"] = get_funding_data(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
 
-            current_price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
-            if current_price is not None:
-                tab_data["price_label"].setText(f"{self.translations[self.language]['price_label'].split(':')[0]}: ${current_price:.6f}")
-            else:
-                tab_data["price_label"].setText(self.translations[self.language]["price_label"])
+                current_price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
+                if current_price is not None:
+                    tab_data["price_label"].setText(f"{self.translations[self.language]['price_label'].split(':')[0]}: ${current_price:.6f}")
+                else:
+                    tab_data["price_label"].setText(self.translations[self.language]["price_label"])
 
-            balance = get_account_balance(tab_data["session"], tab_data["exchange"])
-            if balance is not None:
-                tab_data["balance_label"].setText(f"{self.translations[self.language]['balance_label'].split(':')[0]}: ${balance:.2f} USDT")
-                self.update_tab_leveraged_balance_label(tab_data)
-            else:
-                tab_data["balance_label"].setText(self.translations[self.language]["balance_label"])
-                tab_data["leveraged_balance_label"].setText(self.translations[self.language]["leveraged_balance_label"])
+                balance = get_account_balance(tab_data["session"], tab_data["exchange"])
+                if balance is not None:
+                    tab_data["balance_label"].setText(f"{self.translations[self.language]['balance_label'].split(':')[0]}: ${balance:.2f} USDT")
+                    self.update_tab_leveraged_balance_label(tab_data)
+                else:
+                    tab_data["balance_label"].setText(self.translations[self.language]["balance_label"])
+                    tab_data["leveraged_balance_label"].setText(self.translations[self.language]["leveraged_balance_label"])
 
-            if tab_data["funding_data"]:
-                funding_rate = tab_data["funding_data"]["funding_rate"]
-                funding_time = tab_data["funding_data"]["funding_time"]
-                _, time_str = get_next_funding_time(funding_time, tab_data["funding_interval_hours"])
-                tab_data["funding_info_label"].setText(f"{self.translations[self.language]['funding_info_label'].split(':')[0]}: {funding_rate:.4f}% | {self.translations[self.language]['funding_info_label'].split('|')[1].strip()}: {time_str}")
-            else:
-                tab_data["funding_info_label"].setText(self.translations[self.language]["funding_info_label"])
-                tab_data["price_label"].setText(self.translations[self.language]["price_label"])
-                tab_data["balance_label"].setText(self.translations[self.language]["balance_label"])
-                tab_data["leveraged_balance_label"].setText(self.translations[self.language]["leveraged_balance_label"])
-                tab_data["volume_label"].setText(self.translations[self.language]["volume_label"])
-                tab_data["volume_label"].setStyleSheet("color: black;")
-                tab_data["ping_label"].setText(self.translations[self.language]["ping_label"])
-                tab_data["ping_label"].setStyleSheet("color: black;")
+                if tab_data["funding_data"]:
+                    funding_rate = tab_data["funding_data"]["funding_rate"]
+                    funding_time = tab_data["funding_data"]["funding_time"]
+                    _, time_str = get_next_funding_time(funding_time, tab_data["funding_interval_hours"])
+                    tab_data["funding_info_label"].setText(f"{self.translations[self.language]['funding_info_label'].split(':')[0]}: {funding_rate:.4f}% | {self.translations[self.language]['funding_info_label'].split('|')[1].strip()}: {time_str}")
+                else:
+                    tab_data["funding_info_label"].setText(self.translations[self.language]["funding_info_label"])
+                    tab_data["price_label"].setText(self.translations[self.language]["price_label"])
+                    tab_data["balance_label"].setText(self.translations[self.language]["balance_label"])
+                    tab_data["leveraged_balance_label"].setText(self.translations[self.language]["leveraged_balance_label"])
+                    tab_data["volume_label"].setText(self.translations[self.language]["volume_label"])
+                    tab_data["volume_label"].setStyleSheet("color: black;")
+                    tab_data["ping_label"].setText(self.translations[self.language]["ping_label"])
+                    tab_data["ping_label"].setStyleSheet("color: black;")
 
-            self.update_tab_volume_label(tab_data)
-            self.update_tab_ping(tab_data)
+                self.update_tab_volume_label(tab_data)
+                self.update_tab_ping(tab_data)
 
-            print(f"Tab {tab_index}: Data updated successfully")
+                print(f"Tab {tab_index}: Data updated successfully")
+                return
 
-        except Exception as e:
-            tab_index = self.tab_data_list.index(tab_data) + 1 if tab_data in self.tab_data_list else "Unknown"
-            print(f"Tab {tab_index}: Error updating funding data: {e}")
-            tab_data["funding_info_label"].setText(f"{self.translations[self.language]['funding_info_label'].split(':')[0]}: Error | {self.translations[self.language]['funding_info_label'].split('|')[1].strip()}: Error")
-            tab_data["price_label"].setText(f"{self.translations[self.language]['price_label'].split(':')[0]}: Error")
-            tab_data["balance_label"].setText(f"{self.translations[self.language]['balance_label'].split(':')[0]}: Error")
-            tab_data["leveraged_balance_label"].setText(f"{self.translations[self.language]['leveraged_balance_label'].split(':')[0]}: Error")
-            tab_data["volume_label"].setText(f"{self.translations[self.language]['volume_label'].split(':')[0]}: Error")
-            tab_data["volume_label"].setStyleSheet("color: black;")
-            tab_data["ping_label"].setText(f"{self.translations[self.language]['ping_label'].split(':')[0]}: Error")
-            tab_data["ping_label"].setStyleSheet("color: red;")
+            except Exception as e:
+                tab_index = self.tab_data_list.index(tab_data) + 1 if tab_data in self.tab_data_list else "Unknown"
+                print(f"Tab {tab_index}: Error updating funding data (attempt {attempt + 1}/{retry_count}): {e}")
+                if attempt < retry_count - 1:
+                    time.sleep(retry_delay)
+                else:
+                    tab_data["funding_info_label"].setText(f"{self.translations[self.language]['funding_info_label'].split(':')[0]}: Error | {self.translations[self.language]['funding_info_label'].split('|')[1].strip()}: Error")
+                    tab_data["price_label"].setText(f"{self.translations[self.language]['price_label'].split(':')[0]}: Error")
+                    tab_data["balance_label"].setText(f"{self.translations[self.language]['balance_label'].split(':')[0]}: Error")
+                    tab_data["leveraged_balance_label"].setText(f"{self.translations[self.language]['leveraged_balance_label'].split(':')[0]}: Error")
+                    tab_data["volume_label"].setText(f"{self.translations[self.language]['volume_label'].split(':')[0]}: Error")
+                    tab_data["volume_label"].setStyleSheet("color: black;")
+                    tab_data["ping_label"].setText(f"{self.translations[self.language]['ping_label'].split(':')[0]}: Error")
+                    tab_data["ping_label"].setStyleSheet("color: red;")
 
     def closeEvent(self, event):
         """Handle window close event."""
