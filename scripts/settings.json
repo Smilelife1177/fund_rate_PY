@@ -1,10 +1,10 @@
 {
-    "selected_symbol": "UMAUSDT",
+    "selected_symbol": "SOPHUSDT",
     "funding_interval_hours": 1.0,
     "entry_time_seconds": 9.0,
-    "qty": 4.0,
-    "profit_percentage": 0.89,
-    "leverage": 5.0,
+    "qty": 400.0,
+    "profit_percentage": 0.87,
+    "leverage": 10.0,
     "exchange": "Bybit",
     "testnet": false,
     "language": "uk"
