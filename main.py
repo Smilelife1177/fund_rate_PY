@@ -15,7 +15,8 @@ if __name__ == "__main__":
         if os.path.exists(settings_path):
             with open(settings_path, "r") as f:
                 settings = json.load(f)
-                testnet = settings.get("testnet", testnet)
+                # Зчитуємо testnet з першого елемента tabs, якщо він існує
+                testnet = settings.get("tabs", [{}])[0].get("testnet", testnet)
     except Exception as e:
         print(f"Error loading settings in main.py: {e}, using default testnet={testnet}")
     session = initialize_client(exchange, testnet)
