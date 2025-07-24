@@ -1,0 +1,19 @@
++---------------------+---------------------+---------------------+---------------------+---------------------+
+| Процент   | Фандинг  | Прибиль (%) | Дохід ($) | Комісія | Об'єм ($) | В сделкі ? | Тікет |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+|           |           |           |           |           |           |           |           |
+ 0,52%  -0,046 $  0,022 $  0,09 $  0,024 $  17,56 $  6с  SOPHUSDT |           |           |           |           |           |           |           |           |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+
+Time to next funding for SOPHUSDT: 00:00:04
+Placing market Sell order for SOPHUSDT with quantity 400.0...
+Market order placed: {'orderId': 'c95360f8-6fd9-4f9c-b6d4-8baf06f15104', 'orderLinkId': ''}
+Time to next funding for SOPHUSDT: 00:00:03
+Time to next funding for SOPHUSDT: 00:00:02
+Time to next funding for SOPHUSDT: 00:00:01
+Fetching current price for SOPHUSDT...
+Raw price fetched for SOPHUSDT: 0.04398
+Tick size for SOPHUSDT: 1e-05
+Placing limit Buy order for SOPHUSDT at 0.04378 with quantity 400.0...
+Limit close order placed: {'orderId': '262427ab-223f-4766-b457-90b6ffd2c8c9', 'orderLinkId': ''}
+Time to next funding for SOPHUSDT: 00:00:00
