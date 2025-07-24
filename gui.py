@@ -3,7 +3,7 @@ import json
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
-from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions
+from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, get_optimal_limit_price
 from PyQt6.QtWidgets import QTabBar
 import time
 
@@ -20,6 +20,8 @@ class FundingTraderApp(QMainWindow):
             "entry_time_label": "Entry Time Before Funding (seconds):",
             "qty_label": "Order Quantity (qty):",
             "profit_percentage_label": "Desired Profit Percentage (%):",
+            "auto_limit_label": "Automatic Limit Order:",
+            "auto_limit_checkbox": "Enable Auto Limit",
             "leverage_label": "Leverage (x):",
             "funding_info_label": "Funding Rate: N/A | Time to Next Funding: N/A",
             "price_label": "Current Price: N/A",
@@ -49,6 +51,8 @@ class FundingTraderApp(QMainWindow):
             "entry_time_label": "Час входу до фінансування (секунди):",
             "qty_label": "Кількість замовлення (qty):",
             "profit_percentage_label": "Бажаний відсоток прибутку (%):",
+            "auto_limit_label": "Автоматичний лімітний ордер:",
+            "auto_limit_checkbox": "Увімкнути автоматичний ліміт",
             "leverage_label": "Кредитне плече (x):",
             "funding_info_label": "Ставка фінансування: N/A | Час до наступного фінансування: N/A",
             "price_label": "Поточна ціна: N/A",
@@ -121,11 +125,11 @@ class FundingTraderApp(QMainWindow):
             exchange=exchange,
             settings=initial_settings
         )
-###
-        # Оновлення даних для всіх вкладок після ініціалізації
+
+        # Update data for all tabs after initialization
         for tab_data in self.tab_data_list:
             self.update_tab_funding_data(tab_data)
-###
+
         # Add widgets to main layout
         self.main_layout.addWidget(self.language_label)
         self.main_layout.addWidget(self.language_combobox)
@@ -134,7 +138,6 @@ class FundingTraderApp(QMainWindow):
         # Save settings
         self.save_settings()
 
-    # Modify add_new_tab to maintain "+" tab position
     def add_new_tab(self, session=None, testnet=None, exchange=None, settings=None):
         """Add a new tab with its own settings and UI."""
         self.tab_count += 1
@@ -159,6 +162,7 @@ class FundingTraderApp(QMainWindow):
             "leverage": 1.0,
             "exchange": exchange or "Bybit",
             "testnet": testnet or False,
+            "auto_limit": False  # New default setting for auto limit
         }
         if settings:
             default_settings.update(settings)
@@ -172,6 +176,7 @@ class FundingTraderApp(QMainWindow):
             "qty": default_settings["qty"],
             "profit_percentage": default_settings["profit_percentage"],
             "leverage": default_settings["leverage"],
+            "auto_limit": default_settings["auto_limit"],  # New setting
             "funding_data": None,
             "open_order_id": None,
             "funding_time_price": None,
@@ -239,6 +244,12 @@ class FundingTraderApp(QMainWindow):
         profit_percentage_slider.setSingleStep(10)
         profit_percentage_slider.valueChanged.connect(lambda value: self.update_tab_profit_percentage_from_slider(tab_data, value))
 
+        # Automatic limit order toggle
+        auto_limit_label = QLabel(self.translations[self.language]["auto_limit_label"])
+        auto_limit_checkbox = QCheckBox(self.translations[self.language]["auto_limit_checkbox"])
+        auto_limit_checkbox.setChecked(tab_data["auto_limit"])
+        auto_limit_checkbox.stateChanged.connect(lambda state: self.update_tab_auto_limit(tab_data, state))
+
         # Leverage
         leverage_label = QLabel(self.translations[self.language]["leverage_label"])
         leverage_spinbox = QDoubleSpinBox()
@@ -281,6 +292,8 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(profit_percentage_label)
         layout.addWidget(profit_percentage_spinbox)
         layout.addWidget(profit_percentage_slider)
+        layout.addWidget(auto_limit_label)
+        layout.addWidget(auto_limit_checkbox)
         layout.addWidget(leverage_label)
         layout.addWidget(leverage_spinbox)
         layout.addWidget(funding_info_label)
@@ -310,6 +323,8 @@ class FundingTraderApp(QMainWindow):
             "profit_percentage_label": profit_percentage_label,
             "profit_percentage_spinbox": profit_percentage_spinbox,
             "profit_percentage_slider": profit_percentage_slider,
+            "auto_limit_label": auto_limit_label,
+            "auto_limit_checkbox": auto_limit_checkbox,
             "leverage_label": leverage_label,
             "leverage_spinbox": leverage_spinbox,
             "funding_info_label": funding_info_label,
@@ -362,6 +377,7 @@ class FundingTraderApp(QMainWindow):
                 "leverage": 1.0,
                 "exchange": "Bybit",
                 "testnet": False,
+                "auto_limit": False  # New default setting
             }],
             "language": "en"
         }
@@ -394,6 +410,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["qty_spinbox"].setValue(tab_data["qty"])
         tab_data["profit_percentage_spinbox"].setValue(tab_data["profit_percentage"])
         tab_data["profit_percentage_slider"].setValue(int(tab_data["profit_percentage"] * 100))
+        tab_data["auto_limit_checkbox"].setChecked(tab_data["auto_limit"])
         tab_data["leverage_spinbox"].setValue(tab_data["leverage"])
         self.update_tab_funding_data(tab_data)
 
@@ -410,6 +427,7 @@ class FundingTraderApp(QMainWindow):
                 "leverage": tab_data["leverage"],
                 "exchange": tab_data["exchange"],
                 "testnet": tab_data["testnet"],
+                "auto_limit": tab_data["auto_limit"]
             })
         settings = {
             "tabs": tabs,
@@ -438,6 +456,8 @@ class FundingTraderApp(QMainWindow):
             tab_data["entry_time_label"].setText(self.translations[self.language]["entry_time_label"])
             tab_data["qty_label"].setText(self.translations[self.language]["qty_label"])
             tab_data["profit_percentage_label"].setText(self.translations[self.language]["profit_percentage_label"])
+            tab_data["auto_limit_label"].setText(self.translations[self.language]["auto_limit_label"])
+            tab_data["auto_limit_checkbox"].setText(self.translations[self.language]["auto_limit_checkbox"])
             tab_data["leverage_label"].setText(self.translations[self.language]["leverage_label"])
             tab_data["close_all_trades_button"].setText(self.translations[self.language]["close_all_trades_button"])
             self.update_tab_funding_data(tab_data)
@@ -536,6 +556,15 @@ class FundingTraderApp(QMainWindow):
         print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Updated profit percentage from slider: {tab_data['profit_percentage']}%")
         self.save_settings()
 
+    def update_tab_auto_limit(self, tab_data, state):
+        """Update automatic limit order setting for a specific tab."""
+        if tab_data not in self.tab_data_list:
+            print(f"Tab data not found in tab_data_list, skipping update")
+            return
+        tab_data["auto_limit"] = state == Qt.CheckState.Checked.value
+        print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Auto limit mode: {'Enabled' if tab_data['auto_limit'] else 'Disabled'}")
+        self.save_settings()
+
     def update_tab_leverage(self, tab_data, value):
         """Update leverage for a specific tab."""
         if tab_data not in self.tab_data_list:
@@ -616,7 +645,7 @@ class FundingTraderApp(QMainWindow):
                 QTimer.singleShot(int((time_to_funding - 1.0) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
 
     def capture_tab_funding_price(self, tab_data, symbol, side):
-        """Capture funding price for a specific tab."""
+        """Capture funding price and place limit order for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping funding price capture")
             return
@@ -626,9 +655,27 @@ class FundingTraderApp(QMainWindow):
             tab_data["open_order_id"] = None
             return
 
-        limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
-                      else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
         tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
+        if tab_data["auto_limit"]:
+            # Use order book to determine optimal limit price
+            limit_price = get_optimal_limit_price(
+                tab_data["session"],
+                symbol,
+                side,
+                tab_data["funding_time_price"],
+                tab_data["exchange"],
+                tab_data["profit_percentage"],
+                tick_size
+            )
+            if limit_price is None:
+                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to determine optimal limit price for {symbol}, falling back to manual")
+                limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
+                              else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
+        else:
+            # Use manual profit percentage
+            limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
+                          else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
+
         place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
         tab_data["open_order_id"] = None
 
@@ -663,7 +710,6 @@ class FundingTraderApp(QMainWindow):
             result.exec()
             self.update_tab_funding_data(tab_data)
 
-    # Add a retry mechanism to update_tab_funding_data
     def update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2):
         """Update funding data for a specific tab with retry mechanism."""
         if tab_data not in self.tab_data_list:
