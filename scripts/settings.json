@@ -8,7 +8,7 @@
             "profit_percentage": 1.0,
             "leverage": 1.0,
             "exchange": "Bybit",
-            "testnet": false
+            "testnet": true
         }
     ],
     "language": "en"

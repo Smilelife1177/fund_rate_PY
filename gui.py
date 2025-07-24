@@ -121,7 +121,11 @@ class FundingTraderApp(QMainWindow):
             exchange=exchange,
             settings=initial_settings
         )
-
+###
+        # Оновлення даних для всіх вкладок після ініціалізації
+        for tab_data in self.tab_data_list:
+            self.update_tab_funding_data(tab_data)
+###
         # Add widgets to main layout
         self.main_layout.addWidget(self.language_label)
         self.main_layout.addWidget(self.language_combobox)
