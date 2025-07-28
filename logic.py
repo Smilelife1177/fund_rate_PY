@@ -133,6 +133,46 @@ def get_candle_open_price(session, symbol, exchange):
         print(f"Error fetching candle open price: {e}")
         return None
 
+def place_stop_loss_order(session, symbol, side, qty, stop_price, tick_size, exchange):
+    try:
+        close_side = "Buy" if side == "Sell" else "Sell"
+        if tick_size:
+            decimal_places = abs(int(math.log10(tick_size)))
+            stop_price = round(stop_price, decimal_places)
+        print(f"Placing stop-loss {close_side} order for {symbol} at {stop_price} with quantity {qty}...")
+        if exchange == "Bybit":
+            response = session.place_order(
+                category="linear",
+                symbol=symbol,
+                side=close_side,
+                orderType="Market",
+                qty=str(qty),
+                stopPrice=str(stop_price),
+                triggerDirection=1 if side == "Buy" else 2,
+                timeInForce="GTC",
+                reduceOnly=True
+            )
+            if response["retCode"] == 0:
+                print(f"Stop-loss order placed: {response['result']}")
+                return response["result"]["orderId"]
+            else:
+                print(f"Error placing stop-loss order: {response['retMsg']}")
+                return None
+        else:  # Binance
+            response = session.create_order(
+                symbol=symbol,
+                side=close_side.upper(),
+                type="STOP_MARKET",
+                quantity=qty,
+                stopPrice=str(stop_price),
+                reduceOnly=True
+            )
+            print(f"Stop-loss order placed: {response}")
+            return response["orderId"]
+    except Exception as e:
+        print(f"Error placing stop-loss order: {e}")
+        return None
+
 def get_optimal_limit_price(session, symbol, side, current_price, exchange, profit_percentage, tick_size):
     """Fetch order book and determine optimal limit price based on order density."""
     try:

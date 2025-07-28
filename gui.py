@@ -219,7 +219,7 @@ class FundingTraderApp(QMainWindow):
         # Entry time
         entry_time_label = QLabel(self.translations[self.language]["entry_time_label"])
         entry_time_spinbox = QDoubleSpinBox()
-        entry_time_spinbox.setRange(0.5, 10.0)
+        entry_time_spinbox.setRange(0.5, 60.0)
         entry_time_spinbox.setValue(tab_data["entry_time_seconds"])
         entry_time_spinbox.setSingleStep(0.1)
         entry_time_spinbox.valueChanged.connect(lambda value: self.update_tab_entry_time(tab_data, value))
