@@ -3,9 +3,10 @@ import json
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
-from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, get_optimal_limit_price
+from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, get_optimal_limit_price, get_candle_open_price
 from PyQt6.QtWidgets import QTabBar
 import time
+import math
 
 class FundingTraderApp(QMainWindow):
     translations = {
@@ -180,6 +181,7 @@ class FundingTraderApp(QMainWindow):
             "funding_data": None,
             "open_order_id": None,
             "funding_time_price": None,
+            "limit_price": None  # New field to store limit price
         }
 
         # Exchange selector
@@ -618,8 +620,8 @@ class FundingTraderApp(QMainWindow):
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping funding check")
             return
-        if not tab_data["funding_data"]:
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Funding data unavailable")
+        if not tab_data["funding_data"] or not all(key in tab_data["funding_data"] for key in ["symbol", "funding_rate", "funding_time"]):
+            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Funding data unavailable or incomplete")
             tab_data["funding_info_label"].setText(self.translations[self.language]["funding_info_label"])
             tab_data["price_label"].setText(self.translations[self.language]["price_label"])
             tab_data["balance_label"].setText(self.translations[self.language]["balance_label"])
@@ -634,7 +636,12 @@ class FundingTraderApp(QMainWindow):
         funding_rate = tab_data["funding_data"]["funding_rate"]
         funding_time = tab_data["funding_data"]["funding_time"]
 
-        time_to_funding, time_str = get_next_funding_time(funding_time, tab_data["funding_interval_hours"])
+        try:
+            time_to_funding, time_str = get_next_funding_time(funding_time, tab_data["funding_interval_hours"])
+        except Exception as e:
+            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Error calculating funding time: {e}")
+            return
+
         tab_data["funding_info_label"].setText(f"{self.translations[self.language]['funding_info_label'].split(':')[0]}: {funding_rate:.4f}% | {self.translations[self.language]['funding_info_label'].split('|')[1].strip()}: {time_str}")
         print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Time to next funding for {symbol}: {time_str}")
 
@@ -643,6 +650,25 @@ class FundingTraderApp(QMainWindow):
             tab_data["open_order_id"] = place_market_order(tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"])
             if tab_data["open_order_id"]:
                 QTimer.singleShot(int((time_to_funding - 1.0) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
+
+    def log_limit_price_diff(self, tab_data, symbol, side):
+        """Log the percentage difference between the 1-minute candle open price and the limit price."""
+        if tab_data not in self.tab_data_list:
+            print(f"Tab data not found in tab_data_list, skipping limit price diff logging")
+            return
+        tab_index = self.tab_data_list.index(tab_data) + 1
+        open_price = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
+        limit_price = tab_data.get("limit_price")
+        if open_price is None or limit_price is None:
+            print(f"Tab {tab_index}: Failed to log limit price difference for {symbol}: open_price={open_price}, limit_price={limit_price}")
+            return
+        if side == "Sell":
+            # For Sell position, limit order is Buy, so limit_price is below open_price
+            profit_percentage = (open_price - limit_price) / open_price * 100
+        else:
+            # For Buy position, limit order is Sell, so limit_price is above open_price
+            profit_percentage = (limit_price - open_price) / open_price * 100
+        print(f"Tab {tab_index}: {symbol} | Open price (1m candle): {open_price:.6f} | Limit price: {limit_price:.6f} | Profit percentage: {profit_percentage:.4f}% | Expected profit: {tab_data['profit_percentage']}%")
 
     def capture_tab_funding_price(self, tab_data, symbol, side):
         """Capture funding price and place limit order for a specific tab."""
@@ -676,8 +702,20 @@ class FundingTraderApp(QMainWindow):
             limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
                           else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
 
-        place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
+        # Round limit price to tick size
+        if tick_size:
+            decimal_places = abs(int(math.log10(tick_size)))
+            limit_price = round(limit_price, decimal_places)
+
+        # Store limit price in tab_data
+        tab_data["limit_price"] = limit_price
+
+        # Place limit order
+        order_id = place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
         tab_data["open_order_id"] = None
+
+        # Schedule limit price difference logging after 1 second
+        QTimer.singleShot(1000, lambda: self.log_limit_price_diff(tab_data, symbol, side))
 
     def handle_tab_close_all_trades(self, tab_data):
         """Handle close all trades for a specific tab."""

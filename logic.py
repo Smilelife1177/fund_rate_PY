@@ -106,6 +106,33 @@ def get_current_price(session, symbol, exchange):
         print(f"Error fetching price: {e}")
         return None
 
+def get_candle_open_price(session, symbol, exchange):
+    """Fetch the open price of the latest 1-minute candle."""
+    try:
+        print(f"Fetching 1-minute candle open price for {symbol}...")
+        if exchange == "Bybit":
+            response = session.get_kline(
+                category="linear",
+                symbol=symbol,
+                interval="1",
+                limit=1
+            )
+            if response["retCode"] == 0 and response["result"]["list"]:
+                open_price = float(response["result"]["list"][0][1])  # Open price is second element in kline
+                print(f"1-minute candle open price for {symbol}: {open_price}")
+                return open_price
+            else:
+                print(f"Error fetching candle data: {response['retMsg']}")
+                return None
+        else:  # Binance
+            response = session.get_klines(symbol=symbol, interval="1m", limit=1)
+            open_price = float(response[0][1])  # Open price is second element in kline
+            print(f"1-minute candle open price for {symbol}: {open_price}")
+            return open_price
+    except Exception as e:
+        print(f"Error fetching candle open price: {e}")
+        return None
+
 def get_optimal_limit_price(session, symbol, side, current_price, exchange, profit_percentage, tick_size):
     """Fetch order book and determine optimal limit price based on order density."""
     try:
