@@ -695,67 +695,61 @@ class FundingTraderApp(QMainWindow):
             warning.exec()
 
     def capture_tab_funding_price(self, tab_data, symbol, side):
-        if tab_data not in self.tab_data_list:
-            print(f"Tab data not found in tab_data_list, skipping funding price capture")
-            return
-        # Use 1-minute candle open price
-        tab_data["funding_time_price"] = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
-        if tab_data["funding_time_price"] is None:
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to get candle open price for {symbol}")
-            tab_data["open_order_id"] = None
-            return
+            if tab_data not in self.tab_data_list:
+                print(f"Tab data not found in tab_data_list, skipping funding price capture")
+                return
+            # Use 1-minute candle open price
+            tab_data["funding_time_price"] = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
+            if tab_data["funding_time_price"] is None:
+                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to get candle open price for {symbol}")
+                tab_data["open_order_id"] = None
+                return
 
-        tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
-        # Check for significant price change
-        current_price = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
-        if current_price and abs(current_price - tab_data["funding_time_price"]) / tab_data["funding_time_price"] > 0.01:
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Price changed significantly ({current_price:.6f} vs {tab_data['funding_time_price']:.6f}), skipping limit order")
-            tab_data["open_order_id"] = None
-            return
+            tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
 
-        if tab_data["auto_limit"]:
-            limit_price = get_optimal_limit_price(
-                tab_data["session"],
-                symbol,
-                side,
-                tab_data["funding_time_price"],
-                tab_data["exchange"],
-                tab_data["profit_percentage"],
-                tick_size
-            )
-            if limit_price is None:
-                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to determine optimal limit price for {symbol}, falling back to manual")
+            if tab_data["auto_limit"]:
+                limit_price = get_optimal_limit_price(
+                    tab_data["session"],
+                    symbol,
+                    side,
+                    tab_data["funding_time_price"],
+                    tab_data["exchange"],
+                    tab_data["profit_percentage"],
+                    tick_size
+                )
+                if limit_price is None:
+                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to determine optimal limit price for {symbol}, falling back to manual")
+                    limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
+                                else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
+            else:
                 limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
-                              else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
-        else:
-            limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
-                          else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
+                            else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
 
-        if tick_size:
-            decimal_places = abs(int(math.log10(tick_size)))
-            limit_price = round(limit_price, decimal_places)
-
-        tab_data["limit_price"] = limit_price
-        print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Calculated limit price for {symbol}: {limit_price:.6f} (funding_time_price: {tab_data['funding_time_price']:.6f}, profit_percentage: {tab_data['profit_percentage']}%")
-        order_id = place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
-        tab_data["open_order_id"] = None
-
-        if tab_data["stop_loss_enabled"] and tab_data["stop_loss_percentage"] > 0:
-            stop_price = (tab_data["funding_time_price"] * (1 - tab_data["stop_loss_percentage"] / 100) if side == "Buy" 
-                          else tab_data["funding_time_price"] * (1 + tab_data["stop_loss_percentage"] / 100))
             if tick_size:
                 decimal_places = abs(int(math.log10(tick_size)))
-                stop_price = round(stop_price, decimal_places)
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Placing stop-loss order for {symbol} at {stop_price}...")
-            stop_order_id = place_stop_loss_order(tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"])
-            if stop_order_id:
-                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss order placed for {symbol} at {stop_price} with orderId {stop_order_id}")
-            else:
-                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to place stop-loss order for {symbol} at {stop_price}")
-        else:
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss disabled or percentage is {tab_data['stop_loss_percentage']}%, skipping stop-loss order")
+                limit_price = round(limit_price, decimal_places)
 
-        QTimer.singleShot(1000, lambda: self.log_limit_price_diff(tab_data, symbol, side))
+            tab_data["limit_price"] = limit_price
+            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Calculated limit price for {symbol}: {limit_price:.6f} (funding_time_price: {tab_data['funding_time_price']:.6f}, profit_percentage: {tab_data['profit_percentage']}%")
+            order_id = place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
+            tab_data["open_order_id"] = None
+
+            if tab_data["stop_loss_enabled"] and tab_data["stop_loss_percentage"] > 0:
+                stop_price = (tab_data["funding_time_price"] * (1 - tab_data["stop_loss_percentage"] / 100) if side == "Buy" 
+                            else tab_data["funding_time_price"] * (1 + tab_data["stop_loss_percentage"] / 100))
+                if tick_size:
+                    decimal_places = abs(int(math.log10(tick_size)))
+                    stop_price = round(stop_price, decimal_places)
+                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Placing stop-loss order for {symbol} at {stop_price}...")
+                stop_order_id = place_stop_loss_order(tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"])
+                if stop_order_id:
+                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss order placed for {symbol} at {stop_price} with orderId {stop_order_id}")
+                else:
+                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to place stop-loss order for {symbol} at {stop_price}")
+            else:
+                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss disabled or percentage is {tab_data['stop_loss_percentage']}%, skipping stop-loss order")
+
+            QTimer.singleShot(1000, lambda: self.log_limit_price_diff(tab_data, symbol, side))
 
     def handle_tab_close_all_trades(self, tab_data):
         if tab_data not in self.tab_data_list:

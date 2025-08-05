@@ -1,0 +1,26 @@
++---------------------+---------------------+---------------------+---------------------+---------------------+
+| Процент   | Фандинг  | Прибиль (%) | Дохід ($) | Комісія | Об'єм ($) | В сделкі ? | Тікет |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+|           |           |           |           |           |           |           |           |
+ 2,96%  -0,14 $  0,055 $  0,20 $  0,010 $  6,67 $  7с  MYXUSDT |           |           |           |           |           |           |           |           |
++---------------------+---------------------+---------------------+---------------------+---------------------+
+
+ 1: Time to next funding for MYXUSDT: 00:00:05
+Tab 1: Time to next funding for MYXUSDT: 00:00:04
+Placing market Sell order for MYXUSDT with quantity 5.0...
+Market order placed: {'orderId': 'a0fe08f6-321f-4cdc-adb3-197f24f01c58', 'orderLinkId': ''}
+Tab 1: Time to next funding for MYXUSDT: 00:00:03
+Tab 1: Time to next funding for MYXUSDT: 00:00:02
+Tab 1: Time to next funding for MYXUSDT: 00:00:01
+Tab 1: Time to next funding for MYXUSDT: 00:00:00
+Fetching 1-minute candle open price for MYXUSDT...
+1-minute candle open price for MYXUSDT: 1.3447
+Tick size for MYXUSDT: 1e-05
+Tab 1: Calculated limit price for MYXUSDT: 1.313370 (funding_time_price: 1.344700, profit_percentage: 2.33%
+Placing limit Buy order for MYXUSDT at 1.31337 with quantity 5.0...
+Limit close order placed: {'orderId': '54905a12-a224-4be8-90b2-9d2dcc136a1c', 'orderLinkId': ''}
+Tab 1: Stop-loss disabled or percentage is 1.0%, skipping stop-loss order
+Tab 1: Time to next funding for MYXUSDT: 00:59:57
+Tab 1: MYXUSDT | Open price (1m candle): 1.344700 | Limit price: 1.313370 | Profit percentage: 2.3299% | Expected profit: 2.33%
+Tab 1: Time to next funding for MYXUSDT: 00:59:56
+Tab 1: Time to next funding for MYXUSDT: 00:59:55
