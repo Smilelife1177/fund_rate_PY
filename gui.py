@@ -3,7 +3,7 @@ import json
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
-from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, get_optimal_limit_price, get_candle_open_price, place_stop_loss_order
+from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, get_optimal_limit_price, get_candle_open_price, place_stop_loss_order, get_order_execution_price
 from PyQt6.QtWidgets import QTabBar
 import time
 import math
@@ -44,7 +44,9 @@ class FundingTraderApp(QMainWindow):
             "new_tab_button": "New Tab",
             "tab_title": "Coin {}",
             "price_mismatch_warning_title": "Price Mismatch Warning",
-            "price_mismatch_warning_text": "Limit price for {symbol} results in {actual_profit:.2f}% profit, expected {expected_profit:.2f}%"
+            "price_mismatch_warning_text": "Limit price for {symbol} results in {actual_profit:.2f}% profit, expected {expected_profit:.2f}%",
+            "price_validation_warning_title": "Price Validation Warning",
+            "price_validation_warning_text": "Significant price discrepancy for {symbol}: Entry={entry_price:.6f}, Candle={candle_price:.6f}, Pre-Funding={pre_funding_price:.6f}. Using {selected_price:.6f}."
         },
         "uk": {
             "window_title": "{} Трейдер Фінансування",
@@ -80,7 +82,9 @@ class FundingTraderApp(QMainWindow):
             "new_tab_button": "Нова вкладка",
             "tab_title": "Монета {}",
             "price_mismatch_warning_title": "Попередження про невідповідність ціни",
-            "price_mismatch_warning_text": "Лімітна ціна для {symbol} призводить до прибутку {actual_profit:.2f}%, очікувалось {expected_profit:.2f}%"
+            "price_mismatch_warning_text": "Лімітна ціна для {symbol} призводить до прибутку {actual_profit:.2f}%, очікувалось {expected_profit:.2f}%",
+            "price_validation_warning_title": "Попередження про перевірку ціни",
+            "price_validation_warning_text": "Значна розбіжність цін для {symbol}: Вхід={entry_price:.6f}, Свічка={candle_price:.6f}, Перед фандингом={pre_funding_price:.6f}. Використовується {selected_price:.6f}."
         }
     }
 
@@ -163,7 +167,7 @@ class FundingTraderApp(QMainWindow):
             "testnet": testnet or False,
             "auto_limit": False,
             "stop_loss_percentage": 0.5,
-            "stop_loss_enabled": True  # Нове налаштування за замовчуванням
+            "stop_loss_enabled": True
         }
         if settings:
             default_settings.update(settings)
@@ -179,11 +183,12 @@ class FundingTraderApp(QMainWindow):
             "leverage": default_settings["leverage"],
             "auto_limit": default_settings["auto_limit"],
             "stop_loss_percentage": default_settings["stop_loss_percentage"],
-            "stop_loss_enabled": default_settings["stop_loss_enabled"],  # Додаємо до tab_data
+            "stop_loss_enabled": default_settings["stop_loss_enabled"],
             "funding_data": None,
             "open_order_id": None,
             "funding_time_price": None,
-            "limit_price": None
+            "limit_price": None,
+            "pre_funding_price": None  # Додаємо для зберігання ціни за 1 секунду до фандингу
         }
 
         exchange_label = QLabel(self.translations[self.language]["exchange_label"])
@@ -265,13 +270,6 @@ class FundingTraderApp(QMainWindow):
         stop_loss_percentage_spinbox.setSingleStep(0.1)
         stop_loss_percentage_spinbox.valueChanged.connect(lambda value: self.update_tab_stop_loss_percentage(tab_data, value))
 
-        stop_loss_percentage_label = QLabel(self.translations[self.language]["stop_loss_percentage_label"])
-        stop_loss_percentage_spinbox = QDoubleSpinBox()
-        stop_loss_percentage_spinbox.setRange(0.1, 10.0)
-        stop_loss_percentage_spinbox.setValue(tab_data["stop_loss_percentage"])
-        stop_loss_percentage_spinbox.setSingleStep(0.1)
-        stop_loss_percentage_spinbox.valueChanged.connect(lambda value: self.update_tab_stop_loss_percentage(tab_data, value))
-
         funding_info_label = QLabel(self.translations[self.language]["funding_info_label"])
         price_label = QLabel(self.translations[self.language]["price_label"])
         balance_label = QLabel(self.translations[self.language]["balance_label"])
@@ -308,8 +306,6 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(leverage_spinbox)
         layout.addWidget(stop_loss_enabled_label)
         layout.addWidget(stop_loss_enabled_checkbox)
-        layout.addWidget(stop_loss_percentage_label)
-        layout.addWidget(stop_loss_percentage_spinbox)
         layout.addWidget(stop_loss_percentage_label)
         layout.addWidget(stop_loss_percentage_spinbox)
         layout.addWidget(funding_info_label)
@@ -395,7 +391,8 @@ class FundingTraderApp(QMainWindow):
                 "exchange": "Bybit",
                 "testnet": False,
                 "auto_limit": False,
-                "stop_loss_percentage": 0.5
+                "stop_loss_percentage": 0.5,
+                "stop_loss_enabled": True
             }],
             "language": "en"
         }
@@ -427,7 +424,7 @@ class FundingTraderApp(QMainWindow):
                 "testnet": tab_data["testnet"],
                 "auto_limit": tab_data["auto_limit"],
                 "stop_loss_percentage": tab_data["stop_loss_percentage"],
-                "stop_loss_enabled": tab_data["stop_loss_enabled"]  # Додаємо до налаштувань
+                "stop_loss_enabled": tab_data["stop_loss_enabled"]
             })
         settings = {
             "tabs": tabs,
@@ -645,39 +642,129 @@ class FundingTraderApp(QMainWindow):
         tab_data["funding_info_label"].setText(f"{self.translations[self.language]['funding_info_label'].split(':')[0]}: {funding_rate:.4f}% | {self.translations[self.language]['funding_info_label'].split('|')[1].strip()}: {time_str}")
         print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Time to next funding for {symbol}: {time_str}")
 
+        # Фіксуємо ціну за 1 секунду до фандингу
+        if 0.5 <= time_to_funding <= 1.5 and tab_data["pre_funding_price"] is None:
+            tab_data["pre_funding_price"] = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
+            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Captured pre-funding price for {symbol}: {tab_data['pre_funding_price']}")
+
         if tab_data["entry_time_seconds"] - 1.0 <= time_to_funding <= tab_data["entry_time_seconds"] and not tab_data["open_order_id"]:
             side = "Buy" if funding_rate > 0 else "Sell"
             tab_data["open_order_id"] = place_market_order(tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"])
             if tab_data["open_order_id"]:
-                QTimer.singleShot(int((time_to_funding - 1.0) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
+                QTimer.singleShot(int((time_to_funding - 0.5) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
+            tab_data["pre_funding_price"] = None  # Скидаємо після входу в угоду
 
-    def get_order_execution_price(self, session, symbol, order_id, exchange):
-        """Fetch the execution price of a market order."""
-        try:
-            if exchange == "Bybit":
-                response = session.get_order_history(category="linear", symbol=symbol, orderId=order_id)
-                if response["retCode"] == 0 and response["result"]["list"]:
-                    exec_price = float(response["result"]["list"][0]["avgPrice"])
-                    print(f"Execution price for order {order_id} on {symbol}: {exec_price}")
-                    return exec_price
+    def capture_tab_funding_price(self, tab_data, symbol, side):
+        if tab_data not in self.tab_data_list:
+            print(f"Tab data not found in tab_data_list, skipping funding price capture")
+            return
+
+        tab_index = self.tab_data_list.index(tab_data) + 1
+
+        # Отримання трьох цін
+        entry_price = get_order_execution_price(tab_data["session"], symbol, tab_data["open_order_id"], tab_data["exchange"])
+        candle_price = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
+        pre_funding_price = tab_data["pre_funding_price"]
+
+        print(f"Tab {tab_index}: Prices for {symbol} - Entry: {entry_price}, Candle: {candle_price}, Pre-Funding: {pre_funding_price}")
+
+        # Валідація цін
+        prices = [p for p in [entry_price, candle_price, pre_funding_price] if p is not None]
+        if not prices:
+            print(f"Tab {tab_index}: No valid prices available for {symbol}, cancelling order")
+            tab_data["open_order_id"] = None
+            return
+
+        # Перевірка розбіжності цін
+        max_diff_percentage = 0.5  # Максимальна допустима різниця між цінами (0.5%)
+        if len(prices) > 1:
+            avg_price = sum(prices) / len(prices)
+            deviations = [abs(p - avg_price) / avg_price * 100 for p in prices]
+            if max(deviations) > max_diff_percentage:
+                # Виключаємо ціну з найбільшою відхиленням
+                valid_prices = [p for i, p in enumerate(prices) if deviations[i] <= max_diff_percentage]
+                if valid_prices:
+                    selected_price = sum(valid_prices) / len(valid_prices)
                 else:
-                    print(f"Error fetching execution price: {response['retMsg']}")
-                    return None
-            else:  # Binance
-                response = session.get_order(symbol=symbol, orderId=order_id)
-                exec_price = float(response["price"]) if response["price"] else float(response["avgPrice"])
-                print(f"Execution price for order {order_id} on {symbol}: {exec_price}")
-                return exec_price
-        except Exception as e:
-            print(f"Error fetching execution price: {e}")
-            return None
+                    selected_price = candle_price or avg_price  # Повертаємося до ціни свічки
+                warning = QMessageBox()
+                warning.setWindowTitle(self.translations[self.language]["price_validation_warning_title"])
+                warning.setText(self.translations[self.language]["price_validation_warning_text"].format(
+                    symbol=symbol,
+                    entry_price=entry_price or 0.0,
+                    candle_price=candle_price or 0.0,
+                    pre_funding_price=pre_funding_price or 0.0,
+                    selected_price=selected_price
+                ))
+                warning.exec()
+            else:
+                selected_price = avg_price
+        else:
+            selected_price = prices[0]
+
+        tab_data["funding_time_price"] = selected_price
+        print(f"Tab {tab_index}: Selected price for {symbol}: {selected_price:.6f}")
+
+        tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
+
+        # Розрахунок лімітної ціни
+        target_limit_price = (selected_price * (1 + tab_data["profit_percentage"] / 100) if side == "Buy"
+                            else selected_price * (1 - tab_data["profit_percentage"] / 100))
+
+        if tab_data["auto_limit"]:
+            limit_price = get_optimal_limit_price(
+                tab_data["session"],
+                symbol,
+                side,
+                selected_price,
+                tab_data["exchange"],
+                tab_data["profit_percentage"],
+                tick_size
+            )
+            if limit_price is not None:
+                actual_profit = ((selected_price - limit_price) / selected_price * 100 if side == "Sell"
+                                else (limit_price - selected_price) / selected_price * 100)
+                if abs(actual_profit - tab_data["profit_percentage"]) > 0.1:
+                    print(f"Tab {tab_index}: Optimal limit price {limit_price} gives {actual_profit:.2f}% profit, falling back to manual calculation")
+                    limit_price = target_limit_price
+            else:
+                print(f"Tab {tab_index}: Failed to determine optimal limit price for {symbol}, using manual calculation")
+                limit_price = target_limit_price
+        else:
+            limit_price = target_limit_price
+
+        if tick_size:
+            decimal_places = abs(int(math.log10(tick_size)))
+            limit_price = round(limit_price, decimal_places)
+
+        tab_data["limit_price"] = limit_price
+        print(f"Tab {tab_index}: Calculated limit price for {symbol}: {limit_price:.6f} (selected_price: {selected_price:.6f}, profit_percentage: {tab_data['profit_percentage']}%")
+        order_id = place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
+        tab_data["open_order_id"] = None
+
+        if tab_data["stop_loss_enabled"] and tab_data["stop_loss_percentage"] > 0:
+            stop_price = (selected_price * (1 - tab_data["stop_loss_percentage"] / 100) if side == "Buy"
+                        else selected_price * (1 + tab_data["stop_loss_percentage"] / 100))
+            if tick_size:
+                decimal_places = abs(int(math.log10(tick_size)))
+                stop_price = round(stop_price, decimal_places)
+            print(f"Tab {tab_index}: Placing stop-loss order for {symbol} at {stop_price}...")
+            stop_order_id = place_stop_loss_order(tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"])
+            if stop_order_id:
+                print(f"Tab {tab_index}: Stop-loss order placed for {symbol} at {stop_price} with orderId {stop_order_id}")
+            else:
+                print(f"Tab {tab_index}: Failed to place stop-loss order for {symbol} at {stop_price}")
+        else:
+            print(f"Tab {tab_index}: Stop-loss disabled or percentage is {tab_data['stop_loss_percentage']}%, skipping stop-loss order")
+
+        QTimer.singleShot(1000, lambda: self.log_limit_price_diff(tab_data, symbol, side))
 
     def log_limit_price_diff(self, tab_data, symbol, side):
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping limit price diff logging")
             return
         tab_index = self.tab_data_list.index(tab_data) + 1
-        open_price = tab_data["funding_time_price"]  # Use candle open price
+        open_price = tab_data["funding_time_price"]
         limit_price = tab_data.get("limit_price")
         if open_price is None or limit_price is None:
             print(f"Tab {tab_index}: Failed to log limit price difference for {symbol}: open_price={open_price}, limit_price={limit_price}")
@@ -686,70 +773,13 @@ class FundingTraderApp(QMainWindow):
             profit_percentage = (open_price - limit_price) / open_price * 100
         else:
             profit_percentage = (limit_price - open_price) / open_price * 100
-        print(f"Tab {tab_index}: {symbol} | Open price (1m candle): {open_price:.6f} | Limit price: {limit_price:.6f} | Profit percentage: {profit_percentage:.4f}% | Expected profit: {tab_data['profit_percentage']}%")
+        print(f"Tab {tab_index}: {symbol} | Open price: {open_price:.6f} | Limit price: {limit_price:.6f} | Profit percentage: {profit_percentage:.4f}% | Expected profit: {tab_data['profit_percentage']}%")
         if abs(profit_percentage - tab_data["profit_percentage"]) > 0.5:
             warning = QMessageBox()
             warning.setWindowTitle(self.translations[self.language]["price_mismatch_warning_title"])
             warning.setText(self.translations[self.language]["price_mismatch_warning_text"].format(
                 symbol=symbol, actual_profit=profit_percentage, expected_profit=tab_data["profit_percentage"]))
             warning.exec()
-
-    def capture_tab_funding_price(self, tab_data, symbol, side):
-            if tab_data not in self.tab_data_list:
-                print(f"Tab data not found in tab_data_list, skipping funding price capture")
-                return
-            # Use 1-minute candle open price
-            tab_data["funding_time_price"] = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
-            if tab_data["funding_time_price"] is None:
-                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to get candle open price for {symbol}")
-                tab_data["open_order_id"] = None
-                return
-
-            tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
-
-            if tab_data["auto_limit"]:
-                limit_price = get_optimal_limit_price(
-                    tab_data["session"],
-                    symbol,
-                    side,
-                    tab_data["funding_time_price"],
-                    tab_data["exchange"],
-                    tab_data["profit_percentage"],
-                    tick_size
-                )
-                if limit_price is None:
-                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to determine optimal limit price for {symbol}, falling back to manual")
-                    limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
-                                else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
-            else:
-                limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
-                            else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
-
-            if tick_size:
-                decimal_places = abs(int(math.log10(tick_size)))
-                limit_price = round(limit_price, decimal_places)
-
-            tab_data["limit_price"] = limit_price
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Calculated limit price for {symbol}: {limit_price:.6f} (funding_time_price: {tab_data['funding_time_price']:.6f}, profit_percentage: {tab_data['profit_percentage']}%")
-            order_id = place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
-            tab_data["open_order_id"] = None
-
-            if tab_data["stop_loss_enabled"] and tab_data["stop_loss_percentage"] > 0:
-                stop_price = (tab_data["funding_time_price"] * (1 - tab_data["stop_loss_percentage"] / 100) if side == "Buy" 
-                            else tab_data["funding_time_price"] * (1 + tab_data["stop_loss_percentage"] / 100))
-                if tick_size:
-                    decimal_places = abs(int(math.log10(tick_size)))
-                    stop_price = round(stop_price, decimal_places)
-                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Placing stop-loss order for {symbol} at {stop_price}...")
-                stop_order_id = place_stop_loss_order(tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"])
-                if stop_order_id:
-                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss order placed for {symbol} at {stop_price} with orderId {stop_order_id}")
-                else:
-                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to place stop-loss order for {symbol} at {stop_price}")
-            else:
-                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss disabled or percentage is {tab_data['stop_loss_percentage']}%, skipping stop-loss order")
-
-            QTimer.singleShot(1000, lambda: self.log_limit_price_diff(tab_data, symbol, side))
 
     def handle_tab_close_all_trades(self, tab_data):
         if tab_data not in self.tab_data_list:

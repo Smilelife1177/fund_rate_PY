@@ -291,6 +291,40 @@ def get_symbol_info(session, symbol, exchange):
         print(f"Error fetching symbol info: {e}")
         return None
 
+def get_order_execution_price(session, symbol, order_id, exchange):
+    """
+    Fetch the execution price of a market order using its order ID.
+    
+    Args:
+        session: Exchange API client session (Bybit or Binance).
+        symbol: Trading pair symbol (e.g., 'MYXUSDT').
+        order_id: The ID of the order to query.
+        exchange: The exchange name ('Bybit' or 'Binance').
+    
+    Returns:
+        float: Execution price of the order, or None if not available.
+    """
+    try:
+        if exchange == "Bybit":
+            response = session.get_order_history(category="linear", symbol=symbol, orderId=order_id)
+            if response["retCode"] != 0 or not response["result"]["list"]:
+                print(f"Error fetching order execution price for {symbol}: {response['retMsg']}")
+                return None
+            order = response["result"]["list"][0]
+            execution_price = float(order.get("avgPrice", 0.0))
+            return execution_price if execution_price > 0 else None
+        else:  # Binance
+            response = session.get_order(symbol=symbol, orderId=order_id)
+            if "avgPrice" in response:
+                execution_price = float(response["avgPrice"])
+                return execution_price if execution_price > 0 else None
+            else:
+                print(f"Error fetching order execution price for {symbol}: No avgPrice in response")
+                return None
+    except Exception as e:
+        print(f"Error fetching order execution price for {symbol}: {e}")
+        return None
+
 def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchange):
     try:
         close_side = "Buy" if side == "Sell" else "Sell"
