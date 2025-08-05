@@ -24,7 +24,7 @@ class FundingTraderApp(QMainWindow):
             "auto_limit_label": "Automatic Limit Order:",
             "auto_limit_checkbox": "Enable Auto Limit",
             "leverage_label": "Leverage (x):",
-            "stop_loss_percentage_label": "Stop Loss Percentage (%):",  # New translation
+            "stop_loss_percentage_label": "Stop Loss Percentage (%):",
             "funding_info_label": "Funding Rate: N/A | Time to Next Funding: N/A",
             "price_label": "Current Price: N/A",
             "balance_label": "Account Balance: N/A",
@@ -40,7 +40,9 @@ class FundingTraderApp(QMainWindow):
             "close_all_trades_no_positions": "No open trades to close.",
             "close_all_trades_error": "Error closing trades: {}",
             "new_tab_button": "New Tab",
-            "tab_title": "Coin {}"
+            "tab_title": "Coin {}",
+            "price_mismatch_warning_title": "Price Mismatch Warning",
+            "price_mismatch_warning_text": "Limit price for {symbol} results in {actual_profit:.2f}% profit, expected {expected_profit:.2f}%"
         },
         "uk": {
             "window_title": "{} Трейдер Фінансування",
@@ -56,7 +58,7 @@ class FundingTraderApp(QMainWindow):
             "auto_limit_label": "Автоматичний лімітний ордер:",
             "auto_limit_checkbox": "Увімкнути автоматичний ліміт",
             "leverage_label": "Кредитне плече (x):",
-            "stop_loss_percentage_label": "Відсоток стоп-лоссу (%):",  # New translation
+            "stop_loss_percentage_label": "Відсоток стоп-лоссу (%):",
             "funding_info_label": "Ставка фінансування: N/A | Час до наступного фінансування: N/A",
             "price_label": "Поточна ціна: N/A",
             "balance_label": "Баланс рахунку: N/A",
@@ -72,13 +74,15 @@ class FundingTraderApp(QMainWindow):
             "close_all_trades_no_positions": "Немає відкритих угод для закриття.",
             "close_all_trades_error": "Помилка при закритті угод: {}",
             "new_tab_button": "Нова вкладка",
-            "tab_title": "Монета {}"
+            "tab_title": "Монета {}",
+            "price_mismatch_warning_title": "Попередження про невідповідність ціни",
+            "price_mismatch_warning_text": "Лімітна ціна для {symbol} призводить до прибутку {actual_profit:.2f}%, очікувалось {expected_profit:.2f}%"
         }
     }
 
     def __init__(self, session, testnet, exchange):
         super().__init__()
-        self.language = "en"  # Default to English
+        self.language = "en"
         self.setWindowTitle(self.translations[self.language]["window_title"].format(exchange))
         self.setGeometry(100, 100, 400, 600)
 
@@ -88,27 +92,22 @@ class FundingTraderApp(QMainWindow):
         else:
             print(f"Icon file not found at: {icon_path}")
 
-        # Initialize main widget and layout
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
 
-        # Language selector
         self.language_label = QLabel(self.translations[self.language]["language_label"])
         self.language_combobox = QComboBox()
         self.language_combobox.addItems(["English", "Українська"])
         self.language_combobox.setCurrentText("English" if self.language == "en" else "Українська")
         self.language_combobox.currentTextChanged.connect(self.update_language)
 
-        # Tab widget
         self.tab_widget = QTabWidget()
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.tabCloseRequested.connect(self.close_tab)
 
-        # List to store tab_data for each tab
         self.tab_data_list = []
 
-        # Add new tab button as a tab
         self.add_tab_button = QToolButton()
         self.add_tab_button.setText("+")
         self.add_tab_button.setFixedWidth(30)
@@ -118,7 +117,6 @@ class FundingTraderApp(QMainWindow):
         self.tab_widget.setTabEnabled(self.tab_widget.count() - 1, False)
         self.tab_widget.tabBar().setTabButton(self.tab_widget.count() - 1, QTabBar.ButtonPosition.RightSide, self.add_tab_button)
 
-        # Add initial tab with loaded settings
         self.tab_count = 0
         loaded_settings = self.load_settings()
         initial_settings = loaded_settings[0] if loaded_settings else None
@@ -129,20 +127,16 @@ class FundingTraderApp(QMainWindow):
             settings=initial_settings
         )
 
-        # Update data for all tabs after initialization
         for tab_data in self.tab_data_list:
             self.update_tab_funding_data(tab_data)
 
-        # Add widgets to main layout
         self.main_layout.addWidget(self.language_label)
         self.main_layout.addWidget(self.language_combobox)
         self.main_layout.addWidget(self.tab_widget)
 
-        # Save settings
         self.save_settings()
 
     def add_new_tab(self, session=None, testnet=None, exchange=None, settings=None):
-        """Add a new tab with its own settings and UI."""
         self.tab_count += 1
         tab = QWidget()
         tab_layout = QVBoxLayout(tab)
@@ -154,8 +148,6 @@ class FundingTraderApp(QMainWindow):
         return tab_data
 
     def create_tab_ui(self, layout, session, testnet, exchange, settings=None):
-        """Create UI elements for a single tab."""
-        # Load default settings or use provided settings
         default_settings = {
             "selected_symbol": "HYPERUSDT",
             "funding_interval_hours": 1.0 if exchange == "Bybit" else 8.0,
@@ -166,7 +158,7 @@ class FundingTraderApp(QMainWindow):
             "exchange": exchange or "Bybit",
             "testnet": testnet or False,
             "auto_limit": False,
-            "stop_loss_percentage": 0.5  # New default setting
+            "stop_loss_percentage": 0.5
         }
         if settings:
             default_settings.update(settings)
@@ -181,27 +173,24 @@ class FundingTraderApp(QMainWindow):
             "profit_percentage": default_settings["profit_percentage"],
             "leverage": default_settings["leverage"],
             "auto_limit": default_settings["auto_limit"],
-            "stop_loss_percentage": default_settings["stop_loss_percentage"],  # New setting
+            "stop_loss_percentage": default_settings["stop_loss_percentage"],
             "funding_data": None,
             "open_order_id": None,
             "funding_time_price": None,
             "limit_price": None
         }
 
-        # Exchange selector
         exchange_label = QLabel(self.translations[self.language]["exchange_label"])
         exchange_combobox = QComboBox()
         exchange_combobox.addItems(["Bybit", "Binance"])
         exchange_combobox.setCurrentText(tab_data["exchange"])
         exchange_combobox.currentTextChanged.connect(lambda value: self.update_tab_exchange(tab_data, value))
 
-        # Testnet toggle
         testnet_label = QLabel(self.translations[self.language]["testnet_label"])
         testnet_checkbox = QCheckBox(self.translations[self.language]["testnet_checkbox"])
         testnet_checkbox.setChecked(tab_data["testnet"])
         testnet_checkbox.stateChanged.connect(lambda state: self.update_tab_testnet(tab_data, state))
 
-        # Coin input
         coin_input_label = QLabel(self.translations[self.language]["coin_input_label"])
         coin_input = QLineEdit()
         coin_input.setText(tab_data["selected_symbol"])
@@ -209,7 +198,6 @@ class FundingTraderApp(QMainWindow):
         update_coin_button = QPushButton(self.translations[self.language]["update_coin_button"])
         update_coin_button.clicked.connect(lambda: self.update_tab_symbol(tab_data, coin_input.text()))
 
-        # Funding interval
         funding_interval_label = QLabel(self.translations[self.language]["funding_interval_label"])
         funding_interval_combobox = QComboBox()
         funding_intervals = ["0.01", "1", "4", "8"] if tab_data["exchange"] == "Bybit" else ["8"]
@@ -220,7 +208,6 @@ class FundingTraderApp(QMainWindow):
         funding_interval_combobox.setCurrentText(formatted_interval)
         funding_interval_combobox.currentTextChanged.connect(lambda value: self.update_tab_funding_interval(tab_data, value))
 
-        # Entry time
         entry_time_label = QLabel(self.translations[self.language]["entry_time_label"])
         entry_time_spinbox = QDoubleSpinBox()
         entry_time_spinbox.setRange(0.5, 60.0)
@@ -228,7 +215,6 @@ class FundingTraderApp(QMainWindow):
         entry_time_spinbox.setSingleStep(0.1)
         entry_time_spinbox.valueChanged.connect(lambda value: self.update_tab_entry_time(tab_data, value))
 
-        # Quantity
         qty_label = QLabel(self.translations[self.language]["qty_label"])
         qty_spinbox = QDoubleSpinBox()
         qty_spinbox.setRange(0.001, 10000.0)
@@ -236,7 +222,6 @@ class FundingTraderApp(QMainWindow):
         qty_spinbox.setSingleStep(0.001)
         qty_spinbox.valueChanged.connect(lambda value: self.update_tab_qty(tab_data, value))
 
-        # Profit percentage
         profit_percentage_label = QLabel(self.translations[self.language]["profit_percentage_label"])
         profit_percentage_spinbox = QDoubleSpinBox()
         profit_percentage_spinbox.setRange(0.1, 10.0)
@@ -250,13 +235,11 @@ class FundingTraderApp(QMainWindow):
         profit_percentage_slider.setSingleStep(10)
         profit_percentage_slider.valueChanged.connect(lambda value: self.update_tab_profit_percentage_from_slider(tab_data, value))
 
-        # Automatic limit order toggle
         auto_limit_label = QLabel(self.translations[self.language]["auto_limit_label"])
         auto_limit_checkbox = QCheckBox(self.translations[self.language]["auto_limit_checkbox"])
         auto_limit_checkbox.setChecked(tab_data["auto_limit"])
         auto_limit_checkbox.stateChanged.connect(lambda state: self.update_tab_auto_limit(tab_data, state))
 
-        # Leverage
         leverage_label = QLabel(self.translations[self.language]["leverage_label"])
         leverage_spinbox = QDoubleSpinBox()
         leverage_spinbox.setRange(1.0, 100.0)
@@ -264,7 +247,6 @@ class FundingTraderApp(QMainWindow):
         leverage_spinbox.setSingleStep(0.1)
         leverage_spinbox.valueChanged.connect(lambda value: self.update_tab_leverage(tab_data, value))
 
-        # Stop loss percentage
         stop_loss_percentage_label = QLabel(self.translations[self.language]["stop_loss_percentage_label"])
         stop_loss_percentage_spinbox = QDoubleSpinBox()
         stop_loss_percentage_spinbox.setRange(0.1, 10.0)
@@ -272,7 +254,6 @@ class FundingTraderApp(QMainWindow):
         stop_loss_percentage_spinbox.setSingleStep(0.1)
         stop_loss_percentage_spinbox.valueChanged.connect(lambda value: self.update_tab_stop_loss_percentage(tab_data, value))
 
-        # Info labels
         funding_info_label = QLabel(self.translations[self.language]["funding_info_label"])
         price_label = QLabel(self.translations[self.language]["price_label"])
         balance_label = QLabel(self.translations[self.language]["balance_label"])
@@ -280,16 +261,13 @@ class FundingTraderApp(QMainWindow):
         volume_label = QLabel(self.translations[self.language]["volume_label"])
         ping_label = QLabel(self.translations[self.language]["ping_label"])
 
-        # Refresh button
         refresh_button = QPushButton(self.translations[self.language]["refresh_button"])
         refresh_button.clicked.connect(lambda: self.update_tab_funding_data(tab_data))
 
-        # Close all trades button
         close_all_trades_button = QPushButton(self.translations[self.language]["close_all_trades_button"])
         close_all_trades_button.setStyleSheet("background-color: red; color: white; font-weight: bold;")
         close_all_trades_button.clicked.connect(lambda: self.handle_tab_close_all_trades(tab_data))
 
-        # Add widgets to layout
         layout.addWidget(exchange_label)
         layout.addWidget(exchange_combobox)
         layout.addWidget(testnet_label)
@@ -321,7 +299,6 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(refresh_button)
         layout.addWidget(close_all_trades_button)
 
-        # Store UI elements in tab_data
         tab_data.update({
             "exchange_label": exchange_label,
             "exchange_combobox": exchange_combobox,
@@ -355,7 +332,6 @@ class FundingTraderApp(QMainWindow):
             "close_all_trades_button": close_all_trades_button,
         })
 
-        # Timers for the tab
         timer = QTimer()
         timer.timeout.connect(lambda: self.check_tab_funding_time(tab_data))
         timer.start(1000)
@@ -367,14 +343,12 @@ class FundingTraderApp(QMainWindow):
         tab_data["timer"] = timer
         tab_data["ping_timer"] = ping_timer
 
-        # Initial data update
         self.update_tab_funding_data(tab_data)
         print(f"Created UI for tab {self.tab_count}")
         return tab_data
 
     def close_tab(self, index):
-        """Close a tab and stop its timers."""
-        if self.tab_widget.count() > 1:  # Prevent closing the last tab
+        if self.tab_widget.count() > 1:
             tab_data = self.tab_data_list[index]
             tab_data["timer"].stop()
             tab_data["ping_timer"].stop()
@@ -384,7 +358,6 @@ class FundingTraderApp(QMainWindow):
             self.save_settings()
 
     def load_settings(self):
-        """Load settings from settings.json or set defaults."""
         default_settings = {
             "tabs": [{
                 "selected_symbol": "HYPERUSDT",
@@ -396,7 +369,7 @@ class FundingTraderApp(QMainWindow):
                 "exchange": "Bybit",
                 "testnet": False,
                 "auto_limit": False,
-                "stop_loss_percentage": 0.5  # New default setting
+                "stop_loss_percentage": 0.5
             }],
             "language": "en"
         }
@@ -415,7 +388,6 @@ class FundingTraderApp(QMainWindow):
             return default_settings["tabs"]
 
     def save_settings(self):
-        """Save current settings to settings.json."""
         tabs = []
         for tab_data in self.tab_data_list:
             tabs.append({
@@ -428,7 +400,7 @@ class FundingTraderApp(QMainWindow):
                 "exchange": tab_data["exchange"],
                 "testnet": tab_data["testnet"],
                 "auto_limit": tab_data["auto_limit"],
-                "stop_loss_percentage": tab_data["stop_loss_percentage"]  # New setting
+                "stop_loss_percentage": tab_data["stop_loss_percentage"]
             })
         settings = {
             "tabs": tabs,
@@ -442,7 +414,6 @@ class FundingTraderApp(QMainWindow):
             print(f"Error saving settings: {e}")
 
     def update_language(self, language_text):
-        """Update the language of the UI."""
         self.language = "en" if language_text == "English" else "uk"
         print(f"Updated language: {self.language}")
         self.setWindowTitle(self.translations[self.language]["window_title"].format("Multi-Coin"))
@@ -466,7 +437,6 @@ class FundingTraderApp(QMainWindow):
         self.save_settings()
 
     def update_tab_exchange(self, tab_data, exchange):
-        """Update exchange for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -487,7 +457,6 @@ class FundingTraderApp(QMainWindow):
         print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Switched to exchange: {exchange}")
 
     def update_tab_testnet(self, tab_data, state):
-        """Update testnet mode for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -498,7 +467,6 @@ class FundingTraderApp(QMainWindow):
         self.update_tab_funding_data(tab_data)
 
     def update_tab_symbol(self, tab_data, symbol):
-        """Update symbol for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -509,7 +477,6 @@ class FundingTraderApp(QMainWindow):
         self.update_tab_funding_data(tab_data)
 
     def update_tab_funding_interval(self, tab_data, value):
-        """Update funding interval for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -520,7 +487,6 @@ class FundingTraderApp(QMainWindow):
             self.update_tab_funding_data(tab_data)
 
     def update_tab_entry_time(self, tab_data, value):
-        """Update entry time for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -529,7 +495,6 @@ class FundingTraderApp(QMainWindow):
         self.save_settings()
 
     def update_tab_qty(self, tab_data, value):
-        """Update order quantity for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -539,7 +504,6 @@ class FundingTraderApp(QMainWindow):
         self.update_tab_volume_label(tab_data)
 
     def update_tab_profit_percentage(self, tab_data, value):
-        """Update profit percentage for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -549,7 +513,6 @@ class FundingTraderApp(QMainWindow):
         self.save_settings()
 
     def update_tab_profit_percentage_from_slider(self, tab_data, value):
-        """Update profit percentage from slider for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -559,7 +522,6 @@ class FundingTraderApp(QMainWindow):
         self.save_settings()
 
     def update_tab_auto_limit(self, tab_data, state):
-        """Update automatic limit order setting for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -568,7 +530,6 @@ class FundingTraderApp(QMainWindow):
         self.save_settings()
 
     def update_tab_leverage(self, tab_data, value):
-        """Update leverage for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -578,7 +539,6 @@ class FundingTraderApp(QMainWindow):
         self.update_tab_leveraged_balance_label(tab_data)
 
     def update_tab_stop_loss_percentage(self, tab_data, value):
-        """Update stop loss percentage for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -587,7 +547,6 @@ class FundingTraderApp(QMainWindow):
         self.save_settings()
 
     def update_tab_volume_label(self, tab_data):
-        """Update volume label for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -606,7 +565,6 @@ class FundingTraderApp(QMainWindow):
             tab_data["volume_label"].setStyleSheet("color: black;")
 
     def update_tab_leveraged_balance_label(self, tab_data):
-        """Update leveraged balance label for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
@@ -618,14 +576,12 @@ class FundingTraderApp(QMainWindow):
             tab_data["leveraged_balance_label"].setText(self.translations[self.language]["leveraged_balance_label"])
 
     def update_tab_ping(self, tab_data):
-        """Update ping for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping update")
             return
         update_ping(tab_data["session"], tab_data["ping_label"], tab_data["exchange"])
 
     def check_tab_funding_time(self, tab_data):
-        """Check funding time for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping funding check")
             return
@@ -660,80 +616,113 @@ class FundingTraderApp(QMainWindow):
             if tab_data["open_order_id"]:
                 QTimer.singleShot(int((time_to_funding - 1.0) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
 
+    def get_order_execution_price(self, session, symbol, order_id, exchange):
+        """Fetch the execution price of a market order."""
+        try:
+            if exchange == "Bybit":
+                response = session.get_order_history(category="linear", symbol=symbol, orderId=order_id)
+                if response["retCode"] == 0 and response["result"]["list"]:
+                    exec_price = float(response["result"]["list"][0]["avgPrice"])
+                    print(f"Execution price for order {order_id} on {symbol}: {exec_price}")
+                    return exec_price
+                else:
+                    print(f"Error fetching execution price: {response['retMsg']}")
+                    return None
+            else:  # Binance
+                response = session.get_order(symbol=symbol, orderId=order_id)
+                exec_price = float(response["price"]) if response["price"] else float(response["avgPrice"])
+                print(f"Execution price for order {order_id} on {symbol}: {exec_price}")
+                return exec_price
+        except Exception as e:
+            print(f"Error fetching execution price: {e}")
+            return None
+
     def log_limit_price_diff(self, tab_data, symbol, side):
-        """Log the percentage difference between the 1-minute candle open price and the limit price."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping limit price diff logging")
             return
         tab_index = self.tab_data_list.index(tab_data) + 1
-        open_price = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
+        open_price = tab_data["funding_time_price"]  # Use candle open price
         limit_price = tab_data.get("limit_price")
         if open_price is None or limit_price is None:
             print(f"Tab {tab_index}: Failed to log limit price difference for {symbol}: open_price={open_price}, limit_price={limit_price}")
             return
         if side == "Sell":
-            # For Sell position, limit order is Buy, so limit_price is below open_price
             profit_percentage = (open_price - limit_price) / open_price * 100
         else:
-            # For Buy position, limit order is Sell, so limit_price is above open_price
             profit_percentage = (limit_price - open_price) / open_price * 100
         print(f"Tab {tab_index}: {symbol} | Open price (1m candle): {open_price:.6f} | Limit price: {limit_price:.6f} | Profit percentage: {profit_percentage:.4f}% | Expected profit: {tab_data['profit_percentage']}%")
+        if abs(profit_percentage - tab_data["profit_percentage"]) > 0.5:
+            warning = QMessageBox()
+            warning.setWindowTitle(self.translations[self.language]["price_mismatch_warning_title"])
+            warning.setText(self.translations[self.language]["price_mismatch_warning_text"].format(
+                symbol=symbol, actual_profit=profit_percentage, expected_profit=tab_data["profit_percentage"]))
+            warning.exec()
 
     def capture_tab_funding_price(self, tab_data, symbol, side):
-        """Capture funding price and place limit and stop-loss orders for a specific tab."""
-        if tab_data not in self.tab_data_list:
-            print(f"Tab data not found in tab_data_list, skipping funding price capture")
-            return
-        tab_data["funding_time_price"] = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
-        if tab_data["funding_time_price"] is None:
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to get price at funding time for {symbol}")
-            tab_data["open_order_id"] = None
-            return
+            if tab_data not in self.tab_data_list:
+                print(f"Tab data not found in tab_data_list, skipping funding price capture")
+                return
+            # Use 1-minute candle open price instead of current price
+            tab_data["funding_time_price"] = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
+            if tab_data["funding_time_price"] is None:
+                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to get candle open price for {symbol}")
+                tab_data["open_order_id"] = None
+                return
 
-        tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
-        if tab_data["auto_limit"]:
-            limit_price = get_optimal_limit_price(
-                tab_data["session"],
-                symbol,
-                side,
-                tab_data["funding_time_price"],
-                tab_data["exchange"],
-                tab_data["profit_percentage"],
-                tick_size
-            )
-            if limit_price is None:
-                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to determine optimal limit price for {symbol}, falling back to manual")
+            tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
+            # Check for significant price change
+            current_price = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
+            if current_price and abs(current_price - tab_data["funding_time_price"]) / tab_data["funding_time_price"] > 0.01:
+                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Price changed significantly ({current_price:.6f} vs {tab_data['funding_time_price']:.6f}), skipping limit order")
+                tab_data["open_order_id"] = None
+                return
+
+            if tab_data["auto_limit"]:
+                limit_price = get_optimal_limit_price(
+                    tab_data["session"],
+                    symbol,
+                    side,
+                    tab_data["funding_time_price"],
+                    tab_data["exchange"],
+                    tab_data["profit_percentage"],
+                    tick_size
+                )
+                if limit_price is None:
+                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to determine optimal limit price for {symbol}, falling back to manual")
+                    limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
+                                else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
+            else:
                 limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
-                              else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
-        else:
-            limit_price = (tab_data["funding_time_price"] * (1 + tab_data["profit_percentage"] / 100) if side == "Buy" 
-                          else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
+                            else tab_data["funding_time_price"] * (1 - tab_data["profit_percentage"] / 100))
 
-        # Round limit price to tick size
-        if tick_size:
-            decimal_places = abs(int(math.log10(tick_size)))
-            limit_price = round(limit_price, decimal_places)
+            if tick_size:
+                decimal_places = abs(int(math.log10(tick_size)))
+                limit_price = round(limit_price, decimal_places)
 
-        tab_data["limit_price"] = limit_price
-        order_id = place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
-        tab_data["open_order_id"] = None
+            tab_data["limit_price"] = limit_price
+            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Calculated limit price for {symbol}: {limit_price:.6f} (funding_time_price: {tab_data['funding_time_price']:.6f}, profit_percentage: {tab_data['profit_percentage']}%")
+            order_id = place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
+            tab_data["open_order_id"] = None
 
-        # Place stop-loss order
-        stop_price = (tab_data["funding_time_price"] * (1 - tab_data["stop_loss_percentage"] / 100) if side == "Buy" 
-                      else tab_data["funding_time_price"] * (1 + tab_data["stop_loss_percentage"] / 100))
-        if tick_size:
-            decimal_places = abs(int(math.log10(tick_size)))
-            stop_price = round(stop_price, decimal_places)
-        stop_order_id = place_stop_loss_order(tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"])
-        if stop_order_id:
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss order placed for {symbol} at {stop_price}")
-        else:
-            print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to place stop-loss order for {symbol}")
+            if tab_data["stop_loss_percentage"] > 0:
+                stop_price = (tab_data["funding_time_price"] * (1 - tab_data["stop_loss_percentage"] / 100) if side == "Buy" 
+                            else tab_data["funding_time_price"] * (1 + tab_data["stop_loss_percentage"] / 100))
+                if tick_size:
+                    decimal_places = abs(int(math.log10(tick_size)))
+                    stop_price = round(stop_price, decimal_places)
+                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Placing stop-loss order for {symbol} at {stop_price}...")
+                stop_order_id = place_stop_loss_order(tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"])
+                if stop_order_id:
+                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss order placed for {symbol} at {stop_price} with orderId {stop_order_id}")
+                else:
+                    print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Failed to place stop-loss order for {symbol} at {stop_price}")
+            else:
+                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Stop-loss percentage is {tab_data['stop_loss_percentage']}%, skipping stop-loss order")
 
-        QTimer.singleShot(1000, lambda: self.log_limit_price_diff(tab_data, symbol, side))
+            QTimer.singleShot(1000, lambda: self.log_limit_price_diff(tab_data, symbol, side))
 
     def handle_tab_close_all_trades(self, tab_data):
-        """Handle close all trades for a specific tab."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping close all trades")
             return
@@ -764,7 +753,6 @@ class FundingTraderApp(QMainWindow):
             self.update_tab_funding_data(tab_data)
 
     def update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2):
-        """Update funding data for a specific tab with retry mechanism."""
         if tab_data not in self.tab_data_list:
             print(f"Tab data not found in tab_data_list, skipping funding data update")
             return
@@ -825,7 +813,6 @@ class FundingTraderApp(QMainWindow):
                     tab_data["ping_label"].setStyleSheet("color: red;")
 
     def closeEvent(self, event):
-        """Handle window close event."""
         for tab_data in self.tab_data_list:
             tab_data["timer"].stop()
             tab_data["ping_timer"].stop()
