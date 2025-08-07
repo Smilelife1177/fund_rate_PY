@@ -1,9 +1,0 @@
-Tab 1: Time to next funding for ETHUSDT: 00:00:01
-Fetching current price for ETHUSDT...
-Raw price fetched for ETHUSDT: 3932.97
-Tick size for ETHUSDT: 0.01
-Fetching order book for ETHUSDT to determine optimal limit price...
-Optimal limit price for ETHUSDT: 3957.5 (volume: 0.18)
-Placing limit Sell order for ETHUSDT at 3957.5 with quantity 0.01...
-Limit close order placed: {'orderId': '91bc2404-42d2-456f-bf7f-ac8f8bf89d3e', 'orderLinkId': ''}
-Tab 1: Time to next funding for ETHUSDT: 00:00:34
