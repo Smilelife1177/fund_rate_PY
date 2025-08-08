@@ -1,9 +1,10 @@
 import os
 import json
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer, Qt, QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QTabBar
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, get_optimal_limit_price, get_candle_open_price, place_stop_loss_order, get_order_execution_price
 from translations import translations
 import time
@@ -15,6 +16,12 @@ class FundingTraderApp(QMainWindow):
         self.language = "en"
         self.setWindowTitle(translations[self.language]["window_title"].format(exchange))
         self.setGeometry(100, 100, 400, 600)
+
+        # Initialize QMediaPlayer and QAudioOutput
+        self.audio_output = QAudioOutput()
+        self.audio_output.setVolume(0.5)  # Set volume to 50%
+        self.media_player = QMediaPlayer()
+        self.media_player.setAudioOutput(self.audio_output)
 
         icon_path = r"images\log.ico"
         if os.path.exists(icon_path):
@@ -110,7 +117,10 @@ class FundingTraderApp(QMainWindow):
             "open_order_id": None,
             "funding_time_price": None,
             "limit_price": None,
-            "pre_funding_price": None  # Додаємо для зберігання ціни за 1 секунду до фандингу
+            "pre_funding_price": None,
+            "trade_open_label": None,
+            "limit_placed_label": None,
+            "trade_closed_label": None
         }
 
         exchange_label = QLabel(translations[self.language]["exchange_label"])
@@ -199,6 +209,14 @@ class FundingTraderApp(QMainWindow):
         volume_label = QLabel(translations[self.language]["volume_label"])
         ping_label = QLabel(translations[self.language]["ping_label"])
 
+        # New indicator labels
+        trade_open_label = QLabel(translations[self.language]["trade_open_label"] if "trade_open_label" in translations[self.language] else "Trade Open: Inactive")
+        trade_open_label.setStyleSheet("color: gray;")
+        limit_placed_label = QLabel(translations[self.language]["limit_placed_label"] if "limit_placed_label" in translations[self.language] else "Limit Placed: Inactive")
+        limit_placed_label.setStyleSheet("color: gray;")
+        trade_closed_label = QLabel(translations[self.language]["trade_closed_label"] if "trade_closed_label" in translations[self.language] else "Trade Closed: Inactive")
+        trade_closed_label.setStyleSheet("color: gray;")
+
         refresh_button = QPushButton(translations[self.language]["refresh_button"])
         refresh_button.clicked.connect(lambda: self.update_tab_funding_data(tab_data))
 
@@ -236,6 +254,9 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(leveraged_balance_label)
         layout.addWidget(volume_label)
         layout.addWidget(ping_label)
+        layout.addWidget(trade_open_label)
+        layout.addWidget(limit_placed_label)
+        layout.addWidget(trade_closed_label)
         layout.addWidget(refresh_button)
         layout.addWidget(close_all_trades_button)
 
@@ -270,6 +291,9 @@ class FundingTraderApp(QMainWindow):
             "leveraged_balance_label": leveraged_balance_label,
             "volume_label": volume_label,
             "ping_label": ping_label,
+            "trade_open_label": trade_open_label,
+            "limit_placed_label": limit_placed_label,
+            "trade_closed_label": trade_closed_label,
             "refresh_button": refresh_button,
             "close_all_trades_button": close_all_trades_button
         })
@@ -313,6 +337,9 @@ class FundingTraderApp(QMainWindow):
             tab_data["stop_loss_percentage_label"].setText(translations[self.language]["stop_loss_percentage_label"])
             tab_data["refresh_button"].setText(translations[self.language]["refresh_button"])
             tab_data["close_all_trades_button"].setText(translations[self.language]["close_all_trades_button"])
+            tab_data["trade_open_label"].setText(translations[self.language]["trade_open_label"] if "trade_open_label" in translations[self.language] else "Trade Open: Inactive")
+            tab_data["limit_placed_label"].setText(translations[self.language]["limit_placed_label"] if "limit_placed_label" in translations[self.language] else "Limit Placed: Inactive")
+            tab_data["trade_closed_label"].setText(translations[self.language]["trade_closed_label"] if "trade_closed_label" in translations[self.language] else "Trade Closed: Inactive")
             self.update_tab_funding_data(tab_data)
         self.save_settings()
 
@@ -327,6 +354,7 @@ class FundingTraderApp(QMainWindow):
         funding_intervals = ["0.01", "1", "4", "8"] if value == "Bybit" else ["8"]
         tab_data["funding_interval_combobox"].addItems(funding_intervals)
         tab_data["funding_interval_combobox"].setCurrentText(str(float(tab_data["funding_interval_hours"])))
+        self.reset_tab_indicators(tab_data)
         self.update_tab_funding_data(tab_data)
         self.save_settings()
 
@@ -336,6 +364,7 @@ class FundingTraderApp(QMainWindow):
             return
         tab_data["testnet"] = state == Qt.CheckState.Checked.value
         tab_data["session"] = initialize_client(tab_data["exchange"], tab_data["testnet"])
+        self.reset_tab_indicators(tab_data)
         self.update_tab_funding_data(tab_data)
         self.save_settings()
 
@@ -348,6 +377,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["funding_time_price"] = None
         tab_data["limit_price"] = None
         tab_data["pre_funding_price"] = None
+        self.reset_tab_indicators(tab_data)
         self.update_tab_funding_data(tab_data)
         self.save_settings()
 
@@ -418,6 +448,28 @@ class FundingTraderApp(QMainWindow):
             return
         tab_data["stop_loss_percentage"] = value
         self.save_settings()
+
+    def reset_tab_indicators(self, tab_data):
+        if tab_data not in self.tab_data_list:
+            print(f"Tab data not found in tab_data_list, skipping indicator reset")
+            return
+        tab_data["trade_open_label"].setText(translations[self.language]["trade_open_label"] if "trade_open_label" in translations[self.language] else "Trade Open: Inactive")
+        tab_data["trade_open_label"].setStyleSheet("color: gray;")
+        tab_data["limit_placed_label"].setText(translations[self.language]["limit_placed_label"] if "limit_placed_label" in translations[self.language] else "Limit Placed: Inactive")
+        tab_data["limit_placed_label"].setStyleSheet("color: gray;")
+        tab_data["trade_closed_label"].setText(translations[self.language]["trade_closed_label"] if "trade_closed_label" in translations[self.language] else "Trade Closed: Inactive")
+        tab_data["trade_closed_label"].setStyleSheet("color: gray;")
+
+    def play_sound(self, sound_file):
+        sound_path = os.path.join("audio", sound_file)
+        if os.path.exists(sound_path):
+            try:
+                self.media_player.setSource(QUrl.fromLocalFile(sound_path))
+                self.media_player.play()
+            except Exception as e:
+                print(f"Error playing sound {sound_file}: {e}")
+        else:
+            print(f"Sound file not found at: {sound_path}")
 
     def load_settings(self):
         settings_path = r"scripts\settings.json"
@@ -514,6 +566,7 @@ class FundingTraderApp(QMainWindow):
             tab_data["volume_label"].setStyleSheet("color: black;")
             tab_data["ping_label"].setText(translations[self.language]["ping_label"])
             tab_data["ping_label"].setStyleSheet("color: black;")
+            self.reset_tab_indicators(tab_data)
             return
 
         symbol = tab_data["funding_data"]["symbol"]
@@ -529,7 +582,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["funding_info_label"].setText(f"{translations[self.language]['funding_info_label'].split(':')[0]}: {funding_rate:.4f}% | {translations[self.language]['funding_info_label'].split('|')[1].strip()}: {time_str}")
         print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Time to next funding for {symbol}: {time_str}")
 
-        # Фіксуємо ціну за 1 секунду до фандингу
+        # Capture price 1 second before funding
         if 0.5 <= time_to_funding <= 1.5 and tab_data["pre_funding_price"] is None:
             tab_data["pre_funding_price"] = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
             print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Captured pre-funding price for {symbol}: {tab_data['pre_funding_price']}")
@@ -538,8 +591,11 @@ class FundingTraderApp(QMainWindow):
             side = "Buy" if funding_rate > 0 else "Sell"
             tab_data["open_order_id"] = place_market_order(tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"])
             if tab_data["open_order_id"]:
+                tab_data["trade_open_label"].setText(translations[self.language]["trade_open_label"] if "trade_open_label" in translations[self.language] else "Trade Open: Active")
+                tab_data["trade_open_label"].setStyleSheet("color: green;")
+                self.play_sound("trade_open.wav")
                 QTimer.singleShot(int((time_to_funding - 0.5) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
-            tab_data["pre_funding_price"] = None  # Скидаємо після входу в угоду
+            tab_data["pre_funding_price"] = None  # Reset after entering trade
 
     def capture_tab_funding_price(self, tab_data, symbol, side):
         if tab_data not in self.tab_data_list:
@@ -548,42 +604,35 @@ class FundingTraderApp(QMainWindow):
 
         tab_index = self.tab_data_list.index(tab_data) + 1
 
-        # Отримання трьох цін
+        # Get three prices
         entry_price = get_order_execution_price(tab_data["session"], symbol, tab_data["open_order_id"], tab_data["exchange"])
         candle_price = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
         pre_funding_price = tab_data["pre_funding_price"]
 
         print(f"Tab {tab_index}: Prices for {symbol} - Entry: {entry_price}, Candle: {candle_price}, Pre-Funding: {pre_funding_price}")
 
-        # Валідація цін
+        # Validate prices
         prices = [p for p in [entry_price, candle_price, pre_funding_price] if p is not None]
         if not prices:
             print(f"Tab {tab_index}: No valid prices available for {symbol}, cancelling order")
             tab_data["open_order_id"] = None
+            tab_data["trade_open_label"].setText(translations[self.language]["trade_open_label"] if "trade_open_label" in translations[self.language] else "Trade Open: Inactive")
+            tab_data["trade_open_label"].setStyleSheet("color: gray;")
             return
 
-        # Перевірка розбіжності цін
-        max_diff_percentage = 0.5  # Максимальна допустима різниця між цінами (0.5%)
+        # Check price deviation
+        max_diff_percentage = 0.5  # Maximum allowable price difference (0.5%)
         if len(prices) > 1:
             avg_price = sum(prices) / len(prices)
             deviations = [abs(p - avg_price) / avg_price * 100 for p in prices]
             if max(deviations) > max_diff_percentage:
-                # Виключаємо ціну з найбільшою відхиленням
+                # Exclude price with largest deviation
                 valid_prices = [p for i, p in enumerate(prices) if deviations[i] <= max_diff_percentage]
                 if valid_prices:
                     selected_price = sum(valid_prices) / len(valid_prices)
                 else:
-                    selected_price = candle_price or avg_price  # Повертаємося до ціни свічки
-                warning = QMessageBox()
-                warning.setWindowTitle(translations[self.language]["price_validation_warning_title"])
-                warning.setText(translations[self.language]["price_validation_warning_text"].format(
-                    symbol=symbol,
-                    entry_price=entry_price or 0.0,
-                    candle_price=candle_price or 0.0,
-                    pre_funding_price=pre_funding_price or 0.0,
-                    selected_price=selected_price
-                ))
-                warning.exec()
+                    selected_price = candle_price or avg_price
+                print(f"Tab {tab_index}: Price deviation exceeded {max_diff_percentage}% for {symbol}, selected price: {selected_price:.6f}")
             else:
                 selected_price = avg_price
         else:
@@ -594,7 +643,7 @@ class FundingTraderApp(QMainWindow):
 
         tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
 
-        # Розрахунок лімітної ціни
+        # Calculate limit price
         target_limit_price = (selected_price * (1 + tab_data["profit_percentage"] / 100) if side == "Buy"
                             else selected_price * (1 - tab_data["profit_percentage"] / 100))
 
@@ -627,7 +676,13 @@ class FundingTraderApp(QMainWindow):
         tab_data["limit_price"] = limit_price
         print(f"Tab {tab_index}: Calculated limit price for {symbol}: {limit_price:.6f} (selected_price: {selected_price:.6f}, profit_percentage: {tab_data['profit_percentage']}%")
         order_id = place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
+        if order_id:
+            tab_data["limit_placed_label"].setText(translations[self.language]["limit_placed_label"] if "limit_placed_label" in translations[self.language] else "Limit Placed: Active")
+            tab_data["limit_placed_label"].setStyleSheet("color: green;")
+            self.play_sound("limit_placed.wav")
         tab_data["open_order_id"] = None
+        tab_data["trade_open_label"].setText(translations[self.language]["trade_open_label"] if "trade_open_label" in translations[self.language] else "Trade Open: Inactive")
+        tab_data["trade_open_label"].setStyleSheet("color: gray;")
 
         if tab_data["stop_loss_enabled"] and tab_data["stop_loss_percentage"] > 0:
             stop_price = (selected_price * (1 - tab_data["stop_loss_percentage"] / 100) if side == "Buy"
@@ -690,6 +745,13 @@ class FundingTraderApp(QMainWindow):
             result = QMessageBox()
             if success:
                 tab_data["open_order_id"] = None
+                tab_data["trade_open_label"].setText(translations[self.language]["trade_open_label"] if "trade_open_label" in translations[self.language] else "Trade Open: Inactive")
+                tab_data["trade_open_label"].setStyleSheet("color: gray;")
+                tab_data["limit_placed_label"].setText(translations[self.language]["limit_placed_label"] if "limit_placed_label" in translations[self.language] else "Limit Placed: Inactive")
+                tab_data["limit_placed_label"].setStyleSheet("color: gray;")
+                tab_data["trade_closed_label"].setText(translations[self.language]["trade_closed_label"] if "trade_closed_label" in translations[self.language] else "Trade Closed: Active")
+                tab_data["trade_closed_label"].setStyleSheet("color: green;")
+                self.play_sound("trade_closed.wav")
                 result.setWindowTitle("Success" if self.language == "en" else "Успіх")
                 result.setText(translations[self.language]["close_all_trades_success"])
             else:
@@ -736,6 +798,7 @@ class FundingTraderApp(QMainWindow):
                     tab_data["volume_label"].setStyleSheet("color: black;")
                     tab_data["ping_label"].setText(translations[self.language]["ping_label"])
                     tab_data["ping_label"].setStyleSheet("color: black;")
+                    self.reset_tab_indicators(tab_data)
 
                 self.update_tab_volume_label(tab_data)
                 self.update_tab_ping(tab_data)
@@ -757,10 +820,11 @@ class FundingTraderApp(QMainWindow):
                     tab_data["volume_label"].setStyleSheet("color: black;")
                     tab_data["ping_label"].setText(f"{translations[self.language]['ping_label'].split(':')[0]}: Error")
                     tab_data["ping_label"].setStyleSheet("color: red;")
+                    self.reset_tab_indicators(tab_data)
 
     def closeEvent(self, event):
         for tab_data in self.tab_data_list:
             tab_data["timer"].stop()
             tab_data["ping_timer"].stop()
-        self.save_settings()
+        self.media_player.stop()
         event.accept()

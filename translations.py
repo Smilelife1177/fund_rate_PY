@@ -10,6 +10,9 @@ import math
 translations = {
     "en": {
         "window_title": "{} Funding Trader",
+        "trade_open_label": "Trade Open: Inactive",
+        "limit_placed_label": "Limit Placed: Inactive",
+        "trade_closed_label": "Trade Closed: Inactive",
         "stop_loss_enabled_label": "Enable Stop Loss:",
         "stop_loss_enabled_checkbox": "Enable Stop Loss",
         "exchange_label": "Exchange:",
@@ -49,6 +52,9 @@ translations = {
     "uk": {
         "window_title": "{} Трейдер Фінансування",
         "exchange_label": "Біржа:",
+        "trade_open_label": "Угода відкрита: Неактивно",
+        "limit_placed_label": "Лімітка встановлена: Неактивно",
+        "trade_closed_label": "Угода закрита: Неактивно",
         "stop_loss_enabled_label": "Увімкнути стоп-лосс:",
         "stop_loss_enabled_checkbox": "Увімкнути стоп-лосс",
         "testnet_label": "Режим тестування:",
