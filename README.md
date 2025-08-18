@@ -18,24 +18,38 @@ code fund_rate_PY
 
 **3.7+ pls**
 
-In vscode you can open terminal in bottom
-
 To download needed libraries enter that command in cmd
 
 ```
 pip install -r requirements.txt
 ```
 
-To start working with application type 
+To start working with application type
+
 ```
 .\start.bat
 ```
 
-It create an .env file with som,e texts, u need to put your apis keys to that file after "=" 
+It create an .env file with text, u need to put your apis keys to that file after "="
+
+```
+BYBIT_API_KEY =oleg
+BYBIT_API_SECRET =andrii
+BYBIT_API_KEY_TEST =serhii
+BYBIT_API_SECRET_TEST =sasha
+BINANCE_API_KEY =vladik
+BINANCE_API_SECRET =vasya
+BINANCE_API_KEY_TEST =tolik
+BINANCE_API_SECRET_TEST =nikita
+```
 
 Run code by pressing "F5"
 
-## Credits
+U will see that window:
+
+![Alt text](https://file+.vscode-resource.vscode-cdn.net/c%3A/Users/shapr/Desktop/fund_rate_PY/images/Screenshot.png)
+
+# Credits
 
 Lead Developer - Oleg Shapran (@Smilelife1177) (shapran1177@gmail.com)
 
