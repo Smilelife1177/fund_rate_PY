@@ -47,9 +47,9 @@ Run code by pressing "F5"
 
 U will see that window:
 
-![Alt text](https://file+.vscode-resource.vscode-cdn.net/c%3A/Users/shapr/Desktop/fund_rate_PY/images/Screenshot.png)
+![image](images/Screenshot.png)
 
-# Credits
+Credits
 
 Lead Developer - Oleg Shapran (@Smilelife1177) (shapran1177@gmail.com)
 
