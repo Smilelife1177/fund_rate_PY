@@ -5,6 +5,8 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
 from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, get_optimal_limit_price, get_candle_open_price, place_stop_loss_order, get_order_execution_price
 from PyQt6.QtWidgets import QTabBar
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtCore import QUrl  # Для роботи з URL
 import time
 import math
 
@@ -271,11 +273,21 @@ class FundingTraderApp(QMainWindow):
         stop_loss_percentage_spinbox.valueChanged.connect(lambda value: self.update_tab_stop_loss_percentage(tab_data, value))
 
         funding_info_label = QLabel(self.translations[self.language]["funding_info_label"])
+#
+        funding_web_view = QWebEngineView()
+        funding_web_view.setMinimumHeight(300)  # Мінімальна висота для відображення (можна змінити)
+        layout.addWidget(funding_web_view)
+        tab_data["funding_web_view"] = funding_web_view
+
+        # Початкове оновлення веб-в'ю (з приховуванням, якщо не Bybit)
+        self.update_tab_funding_web_view(tab_data)
+#
         price_label = QLabel(self.translations[self.language]["price_label"])
         balance_label = QLabel(self.translations[self.language]["balance_label"])
         leveraged_balance_label = QLabel(self.translations[self.language]["leveraged_balance_label"])
         volume_label = QLabel(self.translations[self.language]["volume_label"])
         ping_label = QLabel(self.translations[self.language]["ping_label"])
+
 
         refresh_button = QPushButton(self.translations[self.language]["refresh_button"])
         refresh_button.clicked.connect(lambda: self.update_tab_funding_data(tab_data))
@@ -465,6 +477,7 @@ class FundingTraderApp(QMainWindow):
             print(f"Tab data not found in tab_data_list, skipping update")
             return
         tab_data["exchange"] = exchange
+        self.update_tab_funding_web_view(tab_data)
         tab_data["funding_interval_hours"] = 1.0 if exchange == "Bybit" else 8.0
         tab_data["funding_interval_combobox"].blockSignals(True)
         tab_data["funding_interval_combobox"].clear()
@@ -495,6 +508,7 @@ class FundingTraderApp(QMainWindow):
             print(f"Tab data not found in tab_data_list, skipping update")
             return
         tab_data["selected_symbol"] = symbol.strip().upper()
+        self.update_tab_funding_web_view(tab_data)
         print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Updated symbol: {tab_data['selected_symbol']}")
         self.tab_widget.setTabText(self.tab_data_list.index(tab_data), f"{tab_data['selected_symbol']}")
         self.save_settings()
@@ -852,6 +866,7 @@ class FundingTraderApp(QMainWindow):
 
                 self.update_tab_volume_label(tab_data)
                 self.update_tab_ping(tab_data)
+                self.update_tab_funding_web_view(tab_data)
 
                 print(f"Tab {tab_index}: Data updated successfully")
                 return
@@ -871,6 +886,19 @@ class FundingTraderApp(QMainWindow):
                     tab_data["ping_label"].setText(f"{self.translations[self.language]['ping_label'].split(':')[0]}: Error")
                     tab_data["ping_label"].setStyleSheet("color: red;")
 
+#
+    def update_tab_funding_web_view(self, tab_data):
+        if tab_data not in self.tab_data_list:
+            print(f"Tab data not found in tab_data_list, skipping web view update")
+            return
+        symbol = tab_data["selected_symbol"]
+        if tab_data["exchange"] == "Bybit":
+            url = f"https://www.bybit.com/trade/usdt/{symbol}"
+            tab_data["funding_web_view"].setUrl(QUrl(url))
+            tab_data["funding_web_view"].setVisible(True)
+        else:
+            tab_data["funding_web_view"].setVisible(False)  # Ховаємо для Binance
+#
     def closeEvent(self, event):
         for tab_data in self.tab_data_list:
             tab_data["timer"].stop()
