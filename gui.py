@@ -94,7 +94,7 @@ class FundingTraderApp(QMainWindow):
         super().__init__()
         self.language = "en"
         self.setWindowTitle(self.translations[self.language]["window_title"].format(exchange))
-        self.setGeometry(100, 100, 400, 600)
+        self.setGeometry(100, 100, 600, 600)
 
         icon_path = r"images\log.ico"
         if os.path.exists(icon_path):
