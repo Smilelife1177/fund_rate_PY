@@ -7,6 +7,7 @@ from logic import get_account_balance, get_funding_data, get_current_price, get_
 from PyQt6.QtWidgets import QTabBar
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl  # Для роботи з URL
+from PyQt6.QtWidgets import QScrollArea
 import time
 import math
 
@@ -101,11 +102,21 @@ class FundingTraderApp(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
         else:
             print(f"Icon file not found at: {icon_path}")
-
+#
+# Створюємо віджет для вмісту
         self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
 
+        # Створюємо QScrollArea
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(self.central_widget)
+        scroll_area.setWidgetResizable(True)  # Дозволяє віджету змінювати розмір
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)  # Прокрутка по горизонталі за потреби
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)   # Прокрутка по вертикалі за потреби
+
+        # Встановлюємо QScrollArea як центральний віджет
+        self.setCentralWidget(scroll_area)
+#
         self.language_label = QLabel(self.translations[self.language]["language_label"])
         self.language_combobox = QComboBox()
         self.language_combobox.addItems(["English", "Українська"])
