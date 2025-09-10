@@ -21,9 +21,9 @@ Key features:
    If you don't have Git installed, download it from [Gits official site](https://git-scm.com/downloads).
 2. **Install Python**
    Ensure you have Python 3.7 or higher installed. Download it from [Pythons official site](https://www.python.org/downloads/).
-
 3. **Clone the Repository**
    Open a terminal or command prompt and run:
+
    ```bash
    cd Desktop
    git clone https://github.com/Smilelife1177/fund_rate_PY.git
@@ -39,10 +39,10 @@ pip install -r requirements.txt
 To start working with application type
 
 ```
-.\start.bat
+span
 ```
 
-It create an .env file with text, u need to put your apis keys to that file after "="
+It create an .env fil with text, u need to put your apis keys to that file after "="
 
 ```
 BYBIT_API_KEY =oleg
