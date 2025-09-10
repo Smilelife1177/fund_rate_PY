@@ -1,4 +1,8 @@
+# Ignore environment variables file
 .env
+# Ignore database file (not working)
 bybit_users.db
+# Ignore Python cache files
 __pycache__
+# Ignore settings file
 /scripts/settings.json
