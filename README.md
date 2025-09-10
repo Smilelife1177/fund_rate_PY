@@ -39,7 +39,7 @@ pip install -r requirements.txt
 To start working with application type
 
 ```
-span
+bash .\scripts\env_api.sh
 ```
 
 It create an .env fil with text, u need to put your apis keys to that file after "="
