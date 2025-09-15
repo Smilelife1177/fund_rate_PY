@@ -4,7 +4,7 @@ FUNDING RATE
 
 ## Fund_rate_py
 
-[![Python Version](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)[![GitHub Issues](https://img.shields.io/github/issues/Smilelife1177/fund_rate_PY)](https://github.com/Smilelife1177/fund_rate_PY/issues)
+[![Python Version](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)[![Issues](https://img.shields.io/github/issues/Smilelife1177/fund_rate_PY.svg)](https://github.com/Smilelife1177/fund_rate_PY/issues)[![Last Commit](https://img.shields.io/github/last-commit/Smilelife1177/fund_rate_PY/main.svg)](https://github.com/username/repo/commits/main)
 
 A Python-based tool to earn motions when updating the funding rate on different exchanges
 
