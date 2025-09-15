@@ -1,15 +1,16 @@
 import os
 import json
+import time
+import math
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
 from logic import get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, get_optimal_limit_price, get_candle_open_price, place_stop_loss_order, get_order_execution_price
 from PyQt6.QtWidgets import QTabBar
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import QUrl  # Для роботи з URL
+from PyQt6.QtCore import QUrl  
 from PyQt6.QtWidgets import QScrollArea
-import time
-import math
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 
 class FundingTraderApp(QMainWindow):
     translations = {
@@ -285,12 +286,21 @@ class FundingTraderApp(QMainWindow):
 
         funding_info_label = QLabel(self.translations[self.language]["funding_info_label"])
 #
+        # Налаштування профілю для збереження cookies
+        profile = QWebEngineProfile(f"BybitProfile_{self.tab_count}", self)
+        cache_path = os.path.join(os.getcwd(), "webcache", f"tab_{self.tab_count}")
+        os.makedirs(cache_path, exist_ok=True)  # Створюємо папку, якщо вона не існує
+        profile.setCachePath(cache_path)
+        profile.setPersistentStoragePath(cache_path)
+        profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+
         funding_web_view = QWebEngineView()
-        funding_web_view.setMinimumHeight(300)  # Мінімальна висота для відображення (можна змінити)
+        page = QWebEnginePage(profile, funding_web_view)  # Створюємо сторінку з профілем
+        funding_web_view.setPage(page)  # Призначаємо сторінку з профілем до QWebEngineView
+        funding_web_view.setMinimumHeight(300)  # Залишаємо висоту
         layout.addWidget(funding_web_view)
         tab_data["funding_web_view"] = funding_web_view
-
-        # Початкове оновлення веб-в'ю (з приховуванням, якщо не Bybit)
+        tab_data["web_profile"] = profile  # Зберігаємо профіль у tab_data для подальшого використання
         self.update_tab_funding_web_view(tab_data)
 #
         price_label = QLabel(self.translations[self.language]["price_label"])

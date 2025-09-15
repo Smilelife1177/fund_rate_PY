@@ -6,3 +6,5 @@ bybit_users.db
 __pycache__
 # Ignore settings file
 /scripts/settings.json
+#web cookies and cache
+/webcache
