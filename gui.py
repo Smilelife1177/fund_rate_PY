@@ -9,7 +9,7 @@ from logic import get_account_balance, get_funding_data, get_current_price, get_
 from PyQt6.QtWidgets import QTabBar
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl  
-from PyQt6.QtWidgets import QScrollArea
+from PyQt6.QtWidgets import QScrollArea, QHBoxLayout
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 
 class FundingTraderApp(QMainWindow):
@@ -96,7 +96,7 @@ class FundingTraderApp(QMainWindow):
         super().__init__()
         self.language = "en"
         self.setWindowTitle(self.translations[self.language]["window_title"].format(exchange))
-        self.setGeometry(100, 100, 600, 900)
+        self.setGeometry(100, 100, 1200, 900)
 
         icon_path = r"images\log.ico"
         if os.path.exists(icon_path):
@@ -317,39 +317,46 @@ class FundingTraderApp(QMainWindow):
         close_all_trades_button.setStyleSheet("background-color: red; color: white; font-weight: bold;")
         close_all_trades_button.clicked.connect(lambda: self.handle_tab_close_all_trades(tab_data))
 
-        layout.addWidget(exchange_label)
-        layout.addWidget(exchange_combobox)
-        layout.addWidget(testnet_label)
-        layout.addWidget(testnet_checkbox)
-        layout.addWidget(coin_input_label)
-        layout.addWidget(coin_input)
-        layout.addWidget(update_coin_button)
-        layout.addWidget(funding_interval_label)
-        layout.addWidget(funding_interval_combobox)
-        layout.addWidget(entry_time_label)
-        layout.addWidget(entry_time_spinbox)
-        layout.addWidget(qty_label)
-        layout.addWidget(qty_spinbox)
-        layout.addWidget(profit_percentage_label)
-        layout.addWidget(profit_percentage_spinbox)
-        layout.addWidget(profit_percentage_slider)
-        layout.addWidget(auto_limit_label)
-        layout.addWidget(auto_limit_checkbox)
-        layout.addWidget(leverage_label)
-        layout.addWidget(leverage_spinbox)
-        layout.addWidget(stop_loss_enabled_label)
-        layout.addWidget(stop_loss_enabled_checkbox)
-        layout.addWidget(stop_loss_percentage_label)
-        layout.addWidget(stop_loss_percentage_spinbox)
-        layout.addWidget(funding_info_label)
-        layout.addWidget(price_label)
-        layout.addWidget(balance_label)
-        layout.addWidget(leveraged_balance_label)
-        layout.addWidget(volume_label)
-        layout.addWidget(ping_label)
-        layout.addWidget(refresh_button)
-        layout.addWidget(close_all_trades_button)
+        left_layout = QVBoxLayout()
 
+        left_layout.addWidget(exchange_label)
+        left_layout.addWidget(exchange_combobox)
+        left_layout.addWidget(testnet_label)
+        left_layout.addWidget(testnet_checkbox)
+        left_layout.addWidget(coin_input_label)
+        left_layout.addWidget(coin_input)
+        left_layout.addWidget(update_coin_button)
+        left_layout.addWidget(funding_interval_label)
+        left_layout.addWidget(funding_interval_combobox)
+        left_layout.addWidget(entry_time_label)
+        left_layout.addWidget(entry_time_spinbox)
+        left_layout.addWidget(qty_label)
+        left_layout.addWidget(qty_spinbox)
+        left_layout.addWidget(profit_percentage_label)
+        left_layout.addWidget(profit_percentage_spinbox)
+        left_layout.addWidget(profit_percentage_slider)
+        left_layout.addWidget(auto_limit_label)
+        left_layout.addWidget(auto_limit_checkbox)
+        left_layout.addWidget(leverage_label)
+        left_layout.addWidget(leverage_spinbox)
+        left_layout.addWidget(stop_loss_enabled_label)
+        left_layout.addWidget(stop_loss_enabled_checkbox)
+        left_layout.addWidget(stop_loss_percentage_label)
+        left_layout.addWidget(stop_loss_percentage_spinbox)
+        left_layout.addWidget(funding_info_label)
+        left_layout.addWidget(price_label)
+        left_layout.addWidget(balance_label)
+        left_layout.addWidget(leveraged_balance_label)
+        left_layout.addWidget(volume_label)
+        left_layout.addWidget(ping_label)
+        left_layout.addWidget(refresh_button)
+        left_layout.addWidget(close_all_trades_button)
+
+        hbox = QHBoxLayout()
+        hbox.addLayout(left_layout, 1)
+        hbox.addWidget(funding_web_view, 1)
+
+        layout.addLayout(hbox)
         tab_data.update({
             "exchange_label": exchange_label,
             "stop_loss_enabled_label": stop_loss_enabled_label,
