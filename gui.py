@@ -118,6 +118,33 @@ class FundingTraderApp(QMainWindow):
         # Встановлюємо QScrollArea як центральний віджет
         self.setCentralWidget(scroll_area)
 #
+        # In gui.py, in __init__ method, replace the initial settings loading and language_combobox initialization with:
+
+        # Load settings and language
+        settings_path = r"scripts\settings.json"
+        loaded_settings = []
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r") as f:
+                    settings = json.load(f)
+                    loaded_settings = settings.get("tabs", [])
+                    self.language = settings.get("language", "en")  # Load language from settings, default to "en"
+            except Exception as e:
+                print(f"Error loading settings: {e}")
+                self.language = "en"  # Fallback to English if error occurs
+        else:
+            self.language = "en"  # Default language if no settings file
+
+        self.setWindowTitle(self.translations[self.language]["window_title"].format(exchange))
+        self.setGeometry(100, 100, 1200, 900)
+
+        icon_path = r"images\log.ico"
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            print(f"Icon file not found at: {icon_path}")
+
+        # Create language selection
         self.language_label = QLabel(self.translations[self.language]["language_label"])
         self.language_combobox = QComboBox()
         self.language_combobox.addItems(["English", "Українська"])
