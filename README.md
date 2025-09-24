@@ -67,6 +67,6 @@ Lead Developer - Oleg Shapran (@Smilelife1177) (shapran1177@gmail.com)
 
 ## License
 
-The MIT License (MIT)
+GPL-3.0 license
 
 Copyright (c) 2025 Oleg Shapran
