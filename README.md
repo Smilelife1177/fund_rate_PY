@@ -45,14 +45,14 @@ bash .\scripts\env_api.sh
 It create an .env fil with text, u need to put your apis keys to that file after "="
 
 ```
-BYBIT_API_KEY =oleg
-BYBIT_API_SECRET =andrii
-BYBIT_API_KEY_TEST =serhii
-BYBIT_API_SECRET_TEST =sasha
-BINANCE_API_KEY =vladik
-BINANCE_API_SECRET =vasya
-BINANCE_API_KEY_TEST =tolik
-BINANCE_API_SECRET_TEST =nikita
+BYBIT_API_KEY =your api
+BYBIT_API_SECRET =your api
+BYBIT_API_KEY_TEST =your api
+BYBIT_API_SECRET_TEST =your api
+BINANCE_API_KEY =your api
+BINANCE_API_SECRET =your api
+BINANCE_API_KEY_TEST =your api
+BINANCE_API_SECRET_TEST =your api
 ```
 
 Run code by pressing "F5"
