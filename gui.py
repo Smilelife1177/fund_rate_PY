@@ -324,11 +324,26 @@ class FundingTraderApp(QMainWindow):
         funding_web_view = QWebEngineView()
         page = QWebEnginePage(profile, funding_web_view)  # Створюємо сторінку з профілем
         funding_web_view.setPage(page)  # Призначаємо сторінку з профілем до QWebEngineView
-        funding_web_view.setMinimumHeight(300)  # Залишаємо висоту
-        layout.addWidget(funding_web_view)
+        funding_web_view.setMinimumHeight(150)  # Зменшуємо висоту
         tab_data["funding_web_view"] = funding_web_view
         tab_data["web_profile"] = profile  # Зберігаємо профіль у tab_data для подальшого використання
         self.update_tab_funding_web_view(tab_data)
+#
+        # Додаємо Coinglass view
+        coinglass_profile = QWebEngineProfile(f"CoinglassProfile_{self.tab_count}", self)
+        coinglass_cache_path = os.path.join(os.getcwd(), "webcache", f"coinglass_tab_{self.tab_count}")
+        os.makedirs(coinglass_cache_path, exist_ok=True)
+        coinglass_profile.setCachePath(coinglass_cache_path)
+        coinglass_profile.setPersistentStoragePath(coinglass_cache_path)
+        coinglass_profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+
+        coinglass_view = QWebEngineView()
+        coinglass_page = QWebEnginePage(coinglass_profile, coinglass_view)
+        coinglass_view.setPage(coinglass_page)
+        coinglass_view.setMinimumHeight(150)
+        coinglass_view.setUrl(QUrl("https://www.coinglass.com/FundingRate"))
+        tab_data["coinglass_view"] = coinglass_view
+        tab_data["coinglass_profile"] = coinglass_profile
 #
         price_label = QLabel(self.translations[self.language]["price_label"])
         balance_label = QLabel(self.translations[self.language]["balance_label"])
@@ -381,7 +396,12 @@ class FundingTraderApp(QMainWindow):
 
         hbox = QHBoxLayout()
         hbox.addLayout(left_layout, 1)
-        hbox.addWidget(funding_web_view, 1)
+
+        right_layout = QVBoxLayout()
+        right_layout.addWidget(funding_web_view)
+        right_layout.addWidget(coinglass_view)
+
+        hbox.addLayout(right_layout, 1)
 
         layout.addLayout(hbox)
         tab_data.update({
@@ -952,7 +972,8 @@ class FundingTraderApp(QMainWindow):
             tab_data["funding_web_view"].setUrl(QUrl(url))
             tab_data["funding_web_view"].setVisible(True)
         else:
-            tab_data["funding_web_view"].setVisible(False)  # Ховаємо для Binance
+            tab_data["funding_web_view"].setVisible(False)
+        tab_data["coinglass_view"].setVisible(True)  # Завжди показувати Coinglass
 #
     def closeEvent(self, event):
         for tab_data in self.tab_data_list:
