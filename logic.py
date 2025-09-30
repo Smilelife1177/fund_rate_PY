@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import math
 import time
+from trade_stats import record_last_closed_trade
 from pybit.unified_trading import HTTP
 from binance.client import Client as BinanceClient
 
@@ -389,6 +390,10 @@ def close_all_positions(session, exchange, symbol=None):
                             timeInForce="GTC",
                             reduceOnly=True
                         )
+                        if response_order["retCode"] == 0:
+                            print(f"Closed position for {position_symbol}: {response_order['result']}")
+                            time.sleep(1)  # Wait for execution
+                            record_last_closed_trade(session, exchange, position_symbol)
                         if response_order["retCode"] == 0:
                             print(f"Closed position for {position_symbol}: {response_order['result']}")
                         else:
