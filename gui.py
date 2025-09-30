@@ -2,6 +2,7 @@ import os
 import json
 import time
 import math
+from trade_stats import record_last_closed_trade
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
@@ -9,7 +10,7 @@ from logic import get_account_balance, get_funding_data, get_current_price, get_
 from PyQt6.QtWidgets import QTabBar
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl  
-from PyQt6.QtWidgets import QScrollArea, QHBoxLayout
+from PyQt6.QtWidgets import QScrollArea, QHBoxLayout, QTableWidget, QTableWidgetItem
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 
 class FundingTraderApp(QMainWindow):
@@ -91,7 +92,30 @@ class FundingTraderApp(QMainWindow):
             "price_validation_warning_text": "Значна розбіжність цін для {symbol}: Вхід={entry_price:.6f}, Свічка={candle_price:.6f}, Перед фандингом={pre_funding_price:.6f}. Використовується {selected_price:.6f}."
         }
     }
-
+#
+    def update_stats_table(self):
+        import csv
+        if not os.path.exists("trade_stats.csv"):
+            self.stats_table.clear()
+            return
+        
+        with open("trade_stats.csv", 'r', encoding='utf-8') as file:
+            reader = csv.reader(file)
+            data = list(reader)
+            if not data:
+                return
+            
+            headers = data[0]
+            self.stats_table.setColumnCount(len(headers))
+            self.stats_table.setHorizontalHeaderLabels(headers)
+            self.stats_table.setRowCount(len(data) - 1)
+            
+            for row_idx, row in enumerate(data[1:]):
+                for col_idx, val in enumerate(row):
+                    self.stats_table.setItem(row_idx, col_idx, QTableWidgetItem(val))
+            
+            self.stats_table.resizeColumnsToContents()
+#
     def __init__(self, session, testnet, exchange):
         super().__init__()
         self.language = "en"
@@ -175,7 +199,23 @@ class FundingTraderApp(QMainWindow):
             exchange=exchange,
             settings=initial_settings
         )
+#
+        # Add Statistics tab
+        stats_tab = QWidget()
+        stats_layout = QVBoxLayout(stats_tab)
 
+        self.stats_table = QTableWidget()
+        self.stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
+        stats_layout.addWidget(self.stats_table)
+
+        refresh_stats_button = QPushButton(self.translations[self.language]["refresh_button"])  # Reuse refresh translation or add new
+        refresh_stats_button.clicked.connect(self.update_stats_table)
+        stats_layout.addWidget(refresh_stats_button)
+
+        self.tab_widget.addTab(stats_tab, "Statistics" if self.language == "en" else "Статистика")
+
+        self.update_stats_table()
+#
         for tab_data in self.tab_data_list:
             self.update_tab_funding_data(tab_data)
 
@@ -199,6 +239,8 @@ class FundingTraderApp(QMainWindow):
     def create_tab_ui(self, layout, session, testnet, exchange, settings=None):
         default_settings = {
             "selected_symbol": "HYPERUSDT",
+            "position_open": False,
+            "update_count": 0,
             "funding_interval_hours": 1.0 if exchange == "Bybit" else 8.0,
             "entry_time_seconds": 5.0,
             "qty": 45.0,
@@ -752,6 +794,8 @@ class FundingTraderApp(QMainWindow):
 
         # Отримання трьох цін
         entry_price = get_order_execution_price(tab_data["session"], symbol, tab_data["open_order_id"], tab_data["exchange"])
+        if entry_price:
+            tab_data["position_open"] = True
         candle_price = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
         pre_funding_price = tab_data["pre_funding_price"]
 
@@ -960,6 +1004,29 @@ class FundingTraderApp(QMainWindow):
                     tab_data["volume_label"].setStyleSheet("color: black;")
                     tab_data["ping_label"].setText(f"{self.translations[self.language]['ping_label'].split(':')[0]}: Error")
                     tab_data["ping_label"].setStyleSheet("color: red;")
+
+        tab_data["update_count"] = tab_data.get("update_count", 0) + 1
+        if tab_data.get("position_open", False) and tab_data["update_count"] % 10 == 0:  # Check every 10 updates (~10s)
+            try:
+                symbol = tab_data["selected_symbol"]
+                if tab_data["exchange"] == "Bybit":
+                    pos_response = tab_data["session"].get_positions(category="linear", symbol=symbol)
+                    if pos_response["retCode"] == 0:
+                        positions = pos_response["result"]["list"]
+                        position = next((p for p in positions if p["symbol"] == symbol and float(p["size"]) > 0), None)
+                        if not position:
+                            record_last_closed_trade(tab_data["session"], tab_data["exchange"], symbol)
+                            tab_data["position_open"] = False
+                            self.update_stats_table()  # Refresh stats table automatically
+                else:  # Binance (partial support)
+                    pos_response = tab_data["session"].get_position_information(symbol=symbol)
+                    position = next((p for p in pos_response if p["symbol"] == symbol and abs(float(p["positionAmt"])) > 0), None)
+                    if not position:
+                        record_last_closed_trade(tab_data["session"], tab_data["exchange"], symbol)
+                        tab_data["position_open"] = False
+                        self.update_stats_table()
+            except Exception as e:
+                print(f"Error checking position status: {e}")
 
 #
     def update_tab_funding_web_view(self, tab_data):
