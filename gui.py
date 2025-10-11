@@ -311,7 +311,7 @@ class FundingTraderApp(QMainWindow):
 
         qty_label = QLabel(self.translations[self.language]["qty_label"])
         qty_spinbox = QDoubleSpinBox()
-        qty_spinbox.setRange(0.001, 10000.0)
+        qty_spinbox.setRange(0.001, 1000000.0)
         qty_spinbox.setValue(tab_data["qty"])
         qty_spinbox.setSingleStep(0.001)
         qty_spinbox.valueChanged.connect(lambda value: self.update_tab_qty(tab_data, value))
