@@ -8,14 +8,13 @@ from logic import initialize_client
 if __name__ == "__main__":
     print("Starting application...")
     app = QApplication(sys.argv)
-    exchange = "Bybit"  # Default to Bybit
-    testnet = False  # Default value
+    exchange = "Bybit"  
+    testnet = False  
     settings_path = r"scripts\settings.json"
     try:
         if os.path.exists(settings_path):
             with open(settings_path, "r") as f:
                 settings = json.load(f)
-                # Зчитуємо testnet з першого елемента tabs, якщо він існує
                 testnet = settings.get("tabs", [{}])[0].get("testnet", testnet)
     except Exception as e:
         print(f"Error loading settings in main.py: {e}, using default testnet={testnet}")

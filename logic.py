@@ -9,7 +9,6 @@ from binance.client import Client as BinanceClient
 
 def initialize_client(exchange, testnet=False):
     load_dotenv()
-    
     if exchange == "Bybit":
         if testnet:
             api_key = os.getenv('BYBIT_API_KEY_TEST')
@@ -293,18 +292,6 @@ def get_symbol_info(session, symbol, exchange):
         return None
 
 def get_order_execution_price(session, symbol, order_id, exchange):
-    """
-    Fetch the execution price of a market order using its order ID.
-    
-    Args:
-        session: Exchange API client session (Bybit or Binance).
-        symbol: Trading pair symbol (e.g., 'MYXUSDT').
-        order_id: The ID of the order to query.
-        exchange: The exchange name ('Bybit' or 'Binance').
-    
-    Returns:
-        float: Execution price of the order, or None if not available.
-    """
     try:
         if exchange == "Bybit":
             response = session.get_order_history(category="linear", symbol=symbol, orderId=order_id)
