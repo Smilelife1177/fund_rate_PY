@@ -10,16 +10,14 @@ from logic import get_account_balance, get_funding_data, get_current_price, get_
 from PyQt6.QtWidgets import QTabBar
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl  
-from PyQt6.QtWidgets import QScrollArea, QHBoxLayout, QTableWidget, QTableWidgetItem, QButtonGroup
+from PyQt6.QtWidgets import QScrollArea, QHBoxLayout, QTableWidget, QTableWidgetItem
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
-
 
 class FundingTraderApp(QMainWindow):
     translations = {
         "en": {
             "window_title": "{} Funding Trader",
             "stop_loss_enabled_label": "Enable Stop Loss:",
-            "trade_side_label": "Trade Direction:",
             "stop_loss_enabled_checkbox": "Enable Stop Loss",
             "exchange_label": "Exchange:",
             "testnet_label": "Testnet Mode:",
@@ -58,7 +56,6 @@ class FundingTraderApp(QMainWindow):
         "uk": {
             "window_title": "{} Трейдер Фінансування",
             "exchange_label": "Біржа:",
-            "trade_side_label": "Напрямок торгівлі:",
             "stop_loss_enabled_label": "Увімкнути стоп-лосс:",
             "stop_loss_enabled_checkbox": "Увімкнути стоп-лосс",
             "testnet_label": "Режим тестування:",
@@ -253,12 +250,10 @@ class FundingTraderApp(QMainWindow):
             "testnet": testnet or False,
             "auto_limit": False,
             "stop_loss_percentage": 0.5,
-            "stop_loss_enabled": True,
-            "trade_side": None  # Initialize trade_side here
+            "stop_loss_enabled": True
         }
         if settings:
             default_settings.update(settings)
-        
         tab_data = {
             "session": session or initialize_client(default_settings["exchange"], default_settings["testnet"]),
             "testnet": default_settings["testnet"],
@@ -272,12 +267,11 @@ class FundingTraderApp(QMainWindow):
             "auto_limit": default_settings["auto_limit"],
             "stop_loss_percentage": default_settings["stop_loss_percentage"],
             "stop_loss_enabled": default_settings["stop_loss_enabled"],
-            "trade_side": default_settings["trade_side"],  # Add trade_side to tab_data
             "funding_data": None,
             "open_order_id": None,
             "funding_time_price": None,
             "limit_price": None,
-            "pre_funding_price": None
+            "pre_funding_price": None  # Додаємо для зберігання ціни за 1 секунду до фандингу
         }
 
         exchange_label = QLabel(self.translations[self.language]["exchange_label"])
@@ -358,37 +352,7 @@ class FundingTraderApp(QMainWindow):
         stop_loss_percentage_spinbox.setValue(tab_data["stop_loss_percentage"])
         stop_loss_percentage_spinbox.setSingleStep(0.1)
         stop_loss_percentage_spinbox.valueChanged.connect(lambda value: self.update_tab_stop_loss_percentage(tab_data, value))
-        trade_side_label = QLabel(self.translations[self.language]["trade_side_label"])
-        trade_side_layout = QHBoxLayout()
-        long_button = QPushButton("Long")
-        long_button.setCheckable(True)
-        long_button.setStyleSheet("background-color: green; color: white;")
-        short_button = QPushButton("Short")
-        short_button.setCheckable(True)
-        short_button.setStyleSheet("background-color: red; color: white;")
-        trade_side_layout.addWidget(long_button)
-        trade_side_layout.addWidget(short_button)
 
-        button_group = QButtonGroup()
-        button_group.addButton(long_button)
-        button_group.addButton(short_button)
-        button_group.setExclusive(True)
-
-        # Set initial state from tab_data
-        if tab_data["trade_side"] == "Long":
-            long_button.setChecked(True)
-        elif tab_data["trade_side"] == "Short":
-            short_button.setChecked(True)
-
-        # Connect signal
-        button_group.buttonToggled.connect(lambda button, checked: self.update_tab_trade_side(tab_data, button, checked))
-
-        layout.addWidget(trade_side_label)
-        layout.addLayout(trade_side_layout)
-
-        tab_data["long_button"] = long_button
-        tab_data["short_button"] = short_button
-        #
         funding_info_label = QLabel(self.translations[self.language]["funding_info_label"])
 #
         # Налаштування профілю для збереження cookies
@@ -534,16 +498,6 @@ class FundingTraderApp(QMainWindow):
         print(f"Created UI for tab {self.tab_count}")
         return tab_data
 
-
-    def update_tab_trade_side(self, tab_data, button, checked):
-        if checked:
-            tab_data["trade_side"] = button.text()
-        else:
-            # If no button is checked (possible if manually unchecked)
-            if not tab_data["long_button"].isChecked() and not tab_data["short_button"].isChecked():
-                tab_data["trade_side"] = None
-        self.save_settings()
-
     def close_tab(self, index):
         if self.tab_widget.count() > 1:
             tab_data = self.tab_data_list[index]
@@ -591,7 +545,6 @@ class FundingTraderApp(QMainWindow):
             tabs.append({
                 "selected_symbol": tab_data["selected_symbol"],
                 "funding_interval_hours": tab_data["funding_interval_hours"],
-                "trade_side": tab_data["trade_side"],
                 "entry_time_seconds": tab_data["entry_time_seconds"],
                 "qty": tab_data["qty"],
                 "profit_percentage": tab_data["profit_percentage"],
@@ -633,7 +586,6 @@ class FundingTraderApp(QMainWindow):
             tab_data["leverage_label"].setText(self.translations[self.language]["leverage_label"])
             tab_data["stop_loss_percentage_label"].setText(self.translations[self.language]["stop_loss_percentage_label"])
             tab_data["close_all_trades_button"].setText(self.translations[self.language]["close_all_trades_button"])
-            tab_data["trade_side_label"].setText(self.translations[self.language]["trade_side_label"])
             self.update_tab_funding_data(tab_data)
         self.save_settings()
 
@@ -827,13 +779,7 @@ class FundingTraderApp(QMainWindow):
             print(f"Tab {self.tab_data_list.index(tab_data) + 1}: Captured pre-funding price for {symbol}: {tab_data['pre_funding_price']}")
 
         if tab_data["entry_time_seconds"] - 1.0 <= time_to_funding <= tab_data["entry_time_seconds"] and not tab_data["open_order_id"]:
-            if tab_data["trade_side"] is None:
-                print(f"Tab {self.tab_data_list.index(tab_data) + 1}: No trade side selected, skipping entry for {symbol}")
-                return  # Skip entry if no side selected
-
-            side = "Buy" if tab_data["trade_side"] == "Long" else "Sell"
-
-
+            side = "Buy" if funding_rate > 0 else "Sell"
             tab_data["open_order_id"] = place_market_order(tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"])
             if tab_data["open_order_id"]:
                 QTimer.singleShot(int((time_to_funding - 0.5) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
