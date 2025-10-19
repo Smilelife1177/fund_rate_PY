@@ -677,7 +677,7 @@ class FundingTraderApp(QMainWindow):
             tab_data["pre_funding_price"] = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
 
         if tab_data["entry_time_seconds"] - 1.0 <= time_to_funding <= tab_data["entry_time_seconds"] and not tab_data["open_order_id"]:
-            side = "Sell" if rate > 0 else "Buy" if tab_data["reverse_side"] else "Buy" if rate > 0 else "Sell"
+            side = ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"] else ("Buy" if rate > 0 else "Sell")
             tab_data["open_order_id"] = place_market_order(tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"])
             if tab_data["open_order_id"]:
                 QTimer.singleShot(int((time_to_funding - 0.5) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
