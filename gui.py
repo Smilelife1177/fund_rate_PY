@@ -123,6 +123,7 @@ class FundingTraderApp(QMainWindow):
             "tabs": [{
                 "selected_symbol": "HYPERUSDT",
                 "funding_interval_hours": 1.0,
+                "reverse_side": False,
                 "entry_time_seconds": 5.0,
                 "qty": 45.0,
                 "profit_percentage": 1.0,
@@ -139,7 +140,13 @@ class FundingTraderApp(QMainWindow):
             if os.path.exists(self.settings_path):
                 with open(self.settings_path, "r") as f:
                     settings = json.load(f)
-                    return settings.get("tabs", default_settings["tabs"])
+                    # Оновлюємо кожну вкладку, додаючи reverse_side, якщо його немає
+                    tabs = settings.get("tabs", default_settings["tabs"])
+                    for tab in tabs:
+                        tab["reverse_side"] = tab.get("reverse_side", False)
+                    return tabs
+                
+                    # return settings.get("tabs", default_settings["tabs"])
             return default_settings["tabs"]
         except Exception as e:
             print(f"Error loading settings: {e}")
@@ -149,6 +156,7 @@ class FundingTraderApp(QMainWindow):
         tabs = [
             {
                 "selected_symbol": td["selected_symbol"],
+                "reverse_side": td["reverse_side"],
                 "funding_interval_hours": td["funding_interval_hours"],
                 "entry_time_seconds": td["entry_time_seconds"],
                 "qty": td["qty"],
@@ -186,6 +194,7 @@ class FundingTraderApp(QMainWindow):
         defaults = {
             "selected_symbol": "HYPERUSDT",
             "position_open": False,
+            "reverse_side": settings.get("reverse_side", False),
             "update_count": 0,
             "funding_interval_hours": 1.0 if exchange == "Bybit" else 8.0,
             "entry_time_seconds": 5.0,
@@ -207,6 +216,21 @@ class FundingTraderApp(QMainWindow):
         defaults["session"] = session or initialize_client(defaults["exchange"], defaults["testnet"])
         return defaults
 
+    def add_reverse_side_ui(self, layout, tab_data):
+        label = QLabel(self.trans["reverse_side_label"])
+        checkbox = QCheckBox(self.trans["reverse_side_checkbox"])
+        checkbox.setChecked(tab_data["reverse_side"])
+        checkbox.stateChanged.connect(lambda s: self.update_tab_reverse_side(tab_data, s))
+        layout.addWidget(label)
+        layout.addWidget(checkbox)
+        tab_data["reverse_side_label"] = label
+        tab_data["reverse_side_checkbox"] = checkbox
+
+    def update_tab_reverse_side(self, tab_data, state):
+        if tab_data not in self.tab_data_list: return
+        tab_data["reverse_side"] = state == Qt.CheckState.Checked.value
+        self.save_settings()
+
     def create_tab_ui(self, layout, tab_data):
         # Створення UI елементів (скорочено, групуємо в ліву та праву колонки)
         left_layout = QVBoxLayout()
@@ -220,6 +244,7 @@ class FundingTraderApp(QMainWindow):
         self.add_auto_limit_ui(left_layout, tab_data)
         self.add_leverage_ui(left_layout, tab_data)
         self.add_stop_loss_ui(left_layout, tab_data)
+        self.add_reverse_side_ui(left_layout, tab_data)
         self.add_info_labels(left_layout, tab_data)
         self.add_buttons(left_layout, tab_data)
 
@@ -451,6 +476,8 @@ class FundingTraderApp(QMainWindow):
     def update_tab_labels(self, tab_data):
         tab_data["exchange_label"].setText(self.trans["exchange_label"])
         tab_data["testnet_label"].setText(self.trans["testnet_label"])
+        tab_data["reverse_side_label"].setText(self.trans["reverse_side_label"])
+        tab_data["reverse_side_checkbox"].setText(self.trans["reverse_side_checkbox"])
         tab_data["testnet_checkbox"].setText(self.trans["testnet_checkbox"])
         tab_data["coin_input_label"].setText(self.trans["coin_input_label"])
         tab_data["update_coin_button"].setText(self.trans["update_coin_button"])
@@ -650,7 +677,7 @@ class FundingTraderApp(QMainWindow):
             tab_data["pre_funding_price"] = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
 
         if tab_data["entry_time_seconds"] - 1.0 <= time_to_funding <= tab_data["entry_time_seconds"] and not tab_data["open_order_id"]:
-            side = "Buy" if rate > 0 else "Sell"
+            side = "Sell" if rate > 0 else "Buy" if tab_data["reverse_side"] else "Buy" if rate > 0 else "Sell"
             tab_data["open_order_id"] = place_market_order(tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"])
             if tab_data["open_order_id"]:
                 QTimer.singleShot(int((time_to_funding - 0.5) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))

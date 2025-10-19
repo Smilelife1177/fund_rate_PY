@@ -2,6 +2,8 @@
 translations = {
     "en": {
         "window_title": "{} Funding Trader",
+        "reverse_side_label": "Reverse Side Logic",
+        "reverse_side_checkbox": "Invert Buy/Sell based on funding rate",
         "stop_loss_enabled_label": "Enable Stop Loss:",
         "stop_loss_enabled_checkbox": "Enable Stop Loss",
         "exchange_label": "Exchange:",
@@ -41,6 +43,8 @@ translations = {
     "uk": {
         "window_title": "{} Трейдер Фінансування",
         "exchange_label": "Біржа:",
+        "reverse_side_label": "Розвернути логіку сторін",
+        "reverse_side_checkbox": "інвертувати Купівлю/Продаж залежно від ставки фінансування",
         "stop_loss_enabled_label": "Увімкнути стоп-лосс:",
         "stop_loss_enabled_checkbox": "Увімкнути стоп-лосс",
         "testnet_label": "Режим тестування:",
