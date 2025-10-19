@@ -722,9 +722,7 @@ class FundingTraderApp(QMainWindow):
         if max(deviations) > max_diff:
             valid = [p for i, p in enumerate(prices) if deviations[i] <= max_diff]
             selected = sum(valid) / len(valid) if valid else candle_price or avg_price
-            QMessageBox.warning(self, self.trans["price_validation_warning_title"], self.trans["price_validation_warning_text"].format(
-                symbol=symbol, entry_price=entry_price or 0.0, candle_price=candle_price or 0.0, pre_funding_price=pre_funding or 0.0, selected_price=selected
-            ))
+            print(f"Price validation warning for {symbol}: Significant price discrepancy. Entry={entry_price or 0.0}, Candle={candle_price or 0.0}, Pre-funding={pre_funding or 0.0}. Using {selected}")
         else:
             selected = avg_price
 
