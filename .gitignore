@@ -8,3 +8,4 @@ __pycache__
 /scripts/settings.json
 #web cookies and cache
 /webcache
+venv

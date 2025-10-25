@@ -30,6 +30,13 @@ Key features:
    cd fund_rate_PY
    ```
 
+Create virtual enviroment to install libraries
+
+```
+python3 -m venv venv
+source venv/bin/activate
+```
+
 Install the required libraries by running
 
 ```

@@ -1,5 +1,7 @@
 pybit==5.11.0
-PyQt6==6.9.1
+PyQt6==6.10.0
 pyqt6_sip==13.10.2
 python-dotenv==1.1.1
 python_binance==1.0.29
+
+PyQt6-WebEngine
