@@ -1,11 +1,12 @@
 import os
+import datetime
 import json
 import time
 import math
 import csv
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, 
-    QMessageBox, QTabWidget, QToolButton, QTabBar, QScrollArea, QHBoxLayout, QTableWidget, QTableWidgetItem
+    QMessageBox, QTabWidget, QToolButton, QTabBar, QScrollArea, QHBoxLayout, QTableWidget, QTableWidgetItem, QDialog, QDialogButtonBox, QTextEdit
 )
 from PyQt6.QtCore import QTimer, Qt, QUrl
 from PyQt6.QtGui import QIcon
@@ -45,6 +46,7 @@ class FundingTraderApp(QMainWindow):
         initial_settings = loaded_settings[0] if loaded_settings else None
         self.add_new_tab(session=session, testnet=testnet, exchange=exchange, settings=initial_settings)
         self.init_stats_tab()
+        self.initialize_stats_csv()
         self.update_stats_table()
         self.main_layout.addWidget(self.language_label)
         self.main_layout.addWidget(self.language_combobox)
@@ -81,14 +83,99 @@ class FundingTraderApp(QMainWindow):
     def init_stats_tab(self):
         stats_tab = QWidget()
         stats_layout = QVBoxLayout(stats_tab)
+
         self.stats_table = QTableWidget()
         self.stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         stats_layout.addWidget(self.stats_table)
+
+        # Кнопки в рядок
+        btn_layout = QHBoxLayout()
+        
         refresh_stats_button = QPushButton(self.trans["refresh_button"])
         refresh_stats_button.clicked.connect(self.update_stats_table)
-        stats_layout.addWidget(refresh_stats_button)
+        btn_layout.addWidget(refresh_stats_button)
+
+        # Нова кнопка
+        add_trade_button = QPushButton("Додати угоду вручну" if self.language == "en" else "Додати угоду вручну")
+        add_trade_button.clicked.connect(self.open_stats_input_dialog)
+        btn_layout.addWidget(add_trade_button)
+
+        stats_layout.addLayout(btn_layout)
+
         self.tab_widget.addTab(stats_tab, "Statistics" if self.language == "en" else "Статистика")
 
+###
+    STATS_CSV_FILE = "trade_stats.csv"
+    STATS_HEADERS = ["Дата_Час", "Процент", "Фандинг", "Прибиль", "Доход", "Комисия", "Обєм", "В-сделке", "Тикер"]
+
+    def initialize_stats_csv(self):
+        """Створює файл статистики, якщо його ще немає"""
+        if not os.path.exists(self.STATS_CSV_FILE):
+            with open(self.STATS_CSV_FILE, 'w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file)
+                writer.writerow(self.STATS_HEADERS)
+
+    def process_stats_input(self, data):
+        """Обробка введеного рядка (майже без змін з stats.py)"""
+        import re
+        data = re.sub(r'\s*\$\s*', ' ', data)  # Замінюємо $ на пробіл
+        values = [v.strip() for v in re.split(r'\s+', data.strip()) if v.strip()]
+        if len(values) != 8:
+            QMessageBox.warning(
+                self,
+                "Помилка введення",
+                f"Очікується 8 значень, отримано {len(values)}:\n\n{values}"
+            )
+            return None
+        return values
+
+    def write_stats_to_csv(self, values):
+        """Запис рядка в CSV"""
+        with open(self.STATS_CSV_FILE, 'a', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+            row = [current_time] + values
+            writer.writerow(row)
+
+    def open_stats_input_dialog(self):
+        """Відкриває вікно для введення даних угоди"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Запис нової угоди")
+        dialog.setMinimumWidth(500)
+
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel("Введіть дані у форматі:\nПроцент Фандинг Прибиль Доход Комисия Обєм В-сделке Тикер")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        example = QLabel("Приклад:\n2,43% -2,77 0,39 3,37 0,21 137 11с MYXUSDT")
+        example.setStyleSheet("color: gray; font-style: italic;")
+        layout.addWidget(example)
+
+        input_field = QTextEdit()
+        input_field.setAcceptRichText(False)
+        input_field.setPlaceholderText("Вставте сюди дані...")
+        input_field.setFixedHeight(80)
+        layout.addWidget(input_field)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            user_input = input_field.toPlainText().strip()
+            if not user_input:
+                return
+
+            values = self.process_stats_input(user_input)
+            if values:
+                self.initialize_stats_csv()       # на всяк випадок
+                self.write_stats_to_csv(values)
+                QMessageBox.information(self, "Успіх", "Дані успішно записано в trade_stats.csv")
+                self.update_stats_table()         # оновлюємо таблицю одразу
+###
     def update_stats_table(self):
         if not os.path.exists("trade_stats.csv"):
             self.stats_table.clear()
