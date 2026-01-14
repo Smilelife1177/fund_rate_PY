@@ -11,7 +11,6 @@ from PyQt6.QtCore import QTimer, Qt, QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
-from trade_stats import record_last_closed_trade
 from logic import (
     get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, 
     get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, 
@@ -698,7 +697,6 @@ class FundingTraderApp(QMainWindow):
                 pos = tab_data["session"].get_position_information(symbol=symbol)
                 position = next((p for p in pos if p["symbol"] == symbol and abs(float(p["positionAmt"])) > 0), None)
             if not position:
-                record_last_closed_trade(tab_data["session"], tab_data["exchange"], symbol)
                 tab_data["position_open"] = False
                 self.update_stats_table()
         except Exception as e:
