@@ -254,7 +254,9 @@ class FundingTraderApp(QMainWindow):
                 "testnet": td["testnet"],
                 "auto_limit": td["auto_limit"],
                 "stop_loss_percentage": td["stop_loss_percentage"],
-                "stop_loss_enabled": td["stop_loss_enabled"]
+                "stop_loss_enabled": td["stop_loss_enabled"],
+                "auto_mode": td.get("auto_mode", False),
+                "auto_min_funding": td.get("auto_min_funding", 0.05),
             } for td in self.tab_data_list
         ]
         settings = {"tabs": tabs, "language": self.language}
@@ -300,8 +302,8 @@ class FundingTraderApp(QMainWindow):
             "limit_price": None,
             "pre_funding_price": None,
             # Авто-сканування
-            "auto_mode": False,
-            "auto_min_funding": 0.05,
+            "auto_mode": settings.get("auto_mode", False),
+            "auto_min_funding": settings.get("auto_min_funding", 0.05),
             "auto_scan_done_this_minute": False,
             "auto_scan_results": [],
             "auto_selected_symbol": None
@@ -341,7 +343,7 @@ class FundingTraderApp(QMainWindow):
         mode_combo = QComboBox()
         mode_combo.addItems(["Ручний", "Авто"])
         mode_combo.setCurrentIndex(1 if tab_data.get("auto_mode") else 0)
-        mode_combo.currentIndexChanged.connect(lambda i: self.set_auto_mode(tab_data, i == 1))
+        mode_combo.currentIndexChanged.connect(lambda i: (self.set_auto_mode(tab_data, i == 1), self.save_settings()))
         mode_row.addWidget(mode_label)
         mode_row.addWidget(mode_combo)
         layout.addLayout(mode_row)
@@ -355,7 +357,7 @@ class FundingTraderApp(QMainWindow):
         threshold_spin.setSingleStep(0.005)
         threshold_spin.setDecimals(3)
         threshold_spin.setValue(tab_data.get("auto_min_funding", 0.05))
-        threshold_spin.valueChanged.connect(lambda v: tab_data.update({"auto_min_funding": v}))
+        threshold_spin.valueChanged.connect(lambda v: (tab_data.update({"auto_min_funding": v}), self.save_settings()))
         threshold_row.addWidget(threshold_label)
         threshold_row.addWidget(threshold_spin)
         layout.addLayout(threshold_row)
@@ -428,7 +430,10 @@ class FundingTraderApp(QMainWindow):
             self.run_auto_scan(tab_data)
 
     def run_auto_scan(self, tab_data):
-        """Сканує всі USDT-перп монети, фільтрує по порогу і часу фандингу."""
+        """Сканує всі USDT-перп монети.
+        Таблиця: всі монети де |фандинг| >= поріг (будь-який час).
+        Авто-вибір: серед них тільки ті де фандинг <= 60 сек.
+        """
         try:
             threshold = tab_data.get("auto_min_funding", 0.05)
             url = "https://api.bybit.com/v5/market/tickers"
@@ -441,7 +446,8 @@ class FundingTraderApp(QMainWindow):
                 return
 
             now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-            found = []
+            all_above_threshold = []   # для таблиці
+            near_funding = []          # для авто-вибору (≤60 сек до фандингу)
 
             for item in data["result"]["list"]:
                 symbol = item.get("symbol", "")
@@ -456,46 +462,51 @@ class FundingTraderApp(QMainWindow):
                 if next_ft_ms == 0:
                     continue
 
-                ms_to_funding = next_ft_ms - now_ms
-                secs_to_funding = ms_to_funding / 1000.0
-
-                # Фандинг має бути в наступні 0–60 секунд
-                if not (0 <= secs_to_funding <= 60):
+                rate_pct = rate * 100
+                if abs(rate_pct) < threshold:
                     continue
 
-                # Фільтр по порогу
-                if abs(rate * 100) < threshold:
-                    continue
+                secs_to_funding = (next_ft_ms - now_ms) / 1000.0
 
-                found.append({
+                entry = {
                     "symbol": symbol,
-                    "rate": rate * 100,       # у відсотках
+                    "rate": rate_pct,
                     "secs": secs_to_funding,
-                })
+                }
+                all_above_threshold.append(entry)
 
-            # Сортуємо: найбільший |фандинг| першим
-            found.sort(key=lambda x: abs(x["rate"]), reverse=True)
-            tab_data["auto_scan_results"] = found
+                if 0 <= secs_to_funding <= 60:
+                    near_funding.append(entry)
 
-            # Оновлюємо таблицю
+            # Сортуємо по |фандинг| спадно
+            all_above_threshold.sort(key=lambda x: abs(x["rate"]), reverse=True)
+            near_funding.sort(key=lambda x: abs(x["rate"]), reverse=True)
+
+            tab_data["auto_scan_results"] = all_above_threshold
             self.update_auto_scan_table(tab_data)
 
-            if found:
-                best = found[0]
+            status_count = f"Знайдено {len(all_above_threshold)} монет вище порогу"
+
+            if near_funding:
+                # Є монети з фандингом зараз — підставляємо найкращу
+                best = near_funding[0]
                 tab_data["auto_selected_symbol"] = best["symbol"]
                 tab_data["auto_chosen_label"].setText(f"Обрана: {best['symbol']}  ({best['rate']:+.4f}%)")
                 tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #1a6e1a;")
-                # Підставляємо символ у вкладку
                 self.update_tab_symbol(tab_data, best["symbol"])
-                if tab_data.get("auto_mode"):
-                    tab_data["auto_status_label"].setText(f"Знайдено {len(found)} монет. Чекаю фандингу...")
-                    tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-weight: bold;")
+                tab_data["auto_status_label"].setText(f"{status_count}. Чекаю фандингу {best['symbol']}...")
+                tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-weight: bold;")
+            elif all_above_threshold:
+                # Є монети вище порогу, але фандинг ще не скоро
+                tab_data["auto_chosen_label"].setText(f"Очікую фандингу... ({len(all_above_threshold)} монет в списку)")
+                tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #555;")
+                tab_data["auto_status_label"].setText(status_count)
+                tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
             else:
-                tab_data["auto_chosen_label"].setText("Монет не знайдено")
+                tab_data["auto_chosen_label"].setText("Монет вище порогу не знайдено")
                 tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #b00;")
-                if tab_data.get("auto_mode"):
-                    tab_data["auto_status_label"].setText("Нічого не знайдено в цей цикл")
-                    tab_data["auto_status_label"].setStyleSheet("color: #b00; font-style: italic;")
+                tab_data["auto_status_label"].setText("Нічого не знайдено")
+                tab_data["auto_status_label"].setStyleSheet("color: #b00; font-style: italic;")
 
         except Exception as e:
             print(f"Auto scan error: {e}")
