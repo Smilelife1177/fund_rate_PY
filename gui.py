@@ -18,6 +18,8 @@ from logic import (
     get_optimal_limit_price, get_candle_open_price, place_stop_loss_order, get_order_execution_price
 )
 from translations import translations 
+import requests
+from PyQt6.QtCore import QThread, pyqtSignal
 
 class FundingTraderApp(QMainWindow):
     def __init__(self, session, testnet, exchange):
@@ -296,7 +298,13 @@ class FundingTraderApp(QMainWindow):
             "open_order_id": None,
             "funding_time_price": None,
             "limit_price": None,
-            "pre_funding_price": None
+            "pre_funding_price": None,
+            # Авто-сканування
+            "auto_mode": False,
+            "auto_min_funding": 0.05,
+            "auto_scan_done_this_minute": False,
+            "auto_scan_results": [],
+            "auto_selected_symbol": None
         }
         defaults.update(settings)
         defaults["session"] = session or initialize_client(defaults["exchange"], defaults["testnet"])
@@ -316,6 +324,210 @@ class FundingTraderApp(QMainWindow):
         if tab_data not in self.tab_data_list: return
         tab_data["reverse_side"] = state == Qt.CheckState.Checked.value
         self.save_settings()
+
+    # ─── АВТО-РЕЖИМ ────────────────────────────────────────────────────────────
+
+    def add_auto_scan_ui(self, layout, tab_data):
+        """Права панель: перемикач ручний/авто + таблиця результатів сканування."""
+
+        # Заголовок
+        title = QLabel("Auto-режим сканування")
+        title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        layout.addWidget(title)
+
+        # Перемикач Ручний / Авто
+        mode_row = QHBoxLayout()
+        mode_label = QLabel("Режим:")
+        mode_combo = QComboBox()
+        mode_combo.addItems(["Ручний", "Авто"])
+        mode_combo.setCurrentIndex(1 if tab_data.get("auto_mode") else 0)
+        mode_combo.currentIndexChanged.connect(lambda i: self.set_auto_mode(tab_data, i == 1))
+        mode_row.addWidget(mode_label)
+        mode_row.addWidget(mode_combo)
+        layout.addLayout(mode_row)
+        tab_data["auto_mode_combo"] = mode_combo
+
+        # Мінімальний поріг фандингу
+        threshold_row = QHBoxLayout()
+        threshold_label = QLabel("Мін. фандинг |%|:")
+        threshold_spin = QDoubleSpinBox()
+        threshold_spin.setRange(0.001, 5.0)
+        threshold_spin.setSingleStep(0.005)
+        threshold_spin.setDecimals(3)
+        threshold_spin.setValue(tab_data.get("auto_min_funding", 0.05))
+        threshold_spin.valueChanged.connect(lambda v: tab_data.update({"auto_min_funding": v}))
+        threshold_row.addWidget(threshold_label)
+        threshold_row.addWidget(threshold_spin)
+        layout.addLayout(threshold_row)
+        tab_data["auto_threshold_spin"] = threshold_spin
+
+        # Статус наступного сканування
+        status_label = QLabel("Авто вимкнено")
+        status_label.setStyleSheet("color: #555; font-style: italic;")
+        layout.addWidget(status_label)
+        tab_data["auto_status_label"] = status_label
+
+        # Обрана монета
+        chosen_label = QLabel("Обрана монета: —")
+        chosen_label.setStyleSheet("font-weight: bold; color: #1a6e1a;")
+        layout.addWidget(chosen_label)
+        tab_data["auto_chosen_label"] = chosen_label
+
+        # Таблиця результатів
+        results_label = QLabel("Знайдені монети (останнє сканування):")
+        layout.addWidget(results_label)
+
+        table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(["Символ", "Фандинг %", "Час до фандингу"])
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setMinimumHeight(300)
+        layout.addWidget(table)
+        tab_data["auto_scan_table"] = table
+
+        # Кнопка ручного сканування
+        scan_btn = QPushButton("Сканувати зараз")
+        scan_btn.clicked.connect(lambda: self.run_auto_scan(tab_data))
+        layout.addWidget(scan_btn)
+        tab_data["auto_scan_btn"] = scan_btn
+
+        layout.addStretch()
+
+    def set_auto_mode(self, tab_data, enabled: bool):
+        tab_data["auto_mode"] = enabled
+        tab_data["auto_scan_done_this_minute"] = False
+        if enabled:
+            tab_data["auto_status_label"].setText("⏳ Очікую потрібного моменту...")
+            tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-style: italic;")
+        else:
+            tab_data["auto_status_label"].setText("⏳ Авто вимкнено")
+            tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
+
+    def check_auto_scan_trigger(self, tab_data):
+        """Викликається кожну секунду. Запускає сканування за 60 сек до нового годинника."""
+        if not tab_data.get("auto_mode"):
+            return
+
+        now = datetime.now(timezone.utc)
+        seconds_into_hour = now.minute * 60 + now.second
+        seconds_left_in_hour = 3600 - seconds_into_hour   # скільки секунд до нового годинника
+
+        # Оновлюємо статус-лейбл
+        if seconds_left_in_hour > 60:
+            mins = (seconds_left_in_hour - 60) // 60
+            secs = (seconds_left_in_hour - 60) % 60
+            tab_data["auto_status_label"].setText(f"Сканування через {mins:02d}:{secs:02d}")
+            tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
+            tab_data["auto_scan_done_this_minute"] = False   # скидаємо прапор для нового циклу
+        elif seconds_left_in_hour <= 60 and not tab_data.get("auto_scan_done_this_minute"):
+            tab_data["auto_status_label"].setText("Сканування...")
+            tab_data["auto_status_label"].setStyleSheet("color: #e07b00; font-weight: bold;")
+            tab_data["auto_scan_done_this_minute"] = True
+            # Запускаємо сканування в окремому потоці щоб не блокувати UI
+            self.run_auto_scan(tab_data)
+
+    def run_auto_scan(self, tab_data):
+        """Сканує всі USDT-перп монети, фільтрує по порогу і часу фандингу."""
+        try:
+            threshold = tab_data.get("auto_min_funding", 0.05)
+            url = "https://api.bybit.com/v5/market/tickers"
+            resp = requests.get(url, params={"category": "linear"}, timeout=8)
+            resp.raise_for_status()
+            data = resp.json()
+
+            if data.get("retCode") != 0:
+                tab_data["auto_status_label"].setText("Помилка API Bybit")
+                return
+
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            found = []
+
+            for item in data["result"]["list"]:
+                symbol = item.get("symbol", "")
+                if not symbol.endswith("USDT"):
+                    continue
+                try:
+                    rate = float(item.get("fundingRate") or 0)
+                    next_ft_ms = int(item.get("nextFundingTime") or 0)
+                except (ValueError, TypeError):
+                    continue
+
+                if next_ft_ms == 0:
+                    continue
+
+                ms_to_funding = next_ft_ms - now_ms
+                secs_to_funding = ms_to_funding / 1000.0
+
+                # Фандинг має бути в наступні 0–60 секунд
+                if not (0 <= secs_to_funding <= 60):
+                    continue
+
+                # Фільтр по порогу
+                if abs(rate * 100) < threshold:
+                    continue
+
+                found.append({
+                    "symbol": symbol,
+                    "rate": rate * 100,       # у відсотках
+                    "secs": secs_to_funding,
+                })
+
+            # Сортуємо: найбільший |фандинг| першим
+            found.sort(key=lambda x: abs(x["rate"]), reverse=True)
+            tab_data["auto_scan_results"] = found
+
+            # Оновлюємо таблицю
+            self.update_auto_scan_table(tab_data)
+
+            if found:
+                best = found[0]
+                tab_data["auto_selected_symbol"] = best["symbol"]
+                tab_data["auto_chosen_label"].setText(f"Обрана: {best['symbol']}  ({best['rate']:+.4f}%)")
+                tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #1a6e1a;")
+                # Підставляємо символ у вкладку
+                self.update_tab_symbol(tab_data, best["symbol"])
+                if tab_data.get("auto_mode"):
+                    tab_data["auto_status_label"].setText(f"Знайдено {len(found)} монет. Чекаю фандингу...")
+                    tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-weight: bold;")
+            else:
+                tab_data["auto_chosen_label"].setText("Монет не знайдено")
+                tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #b00;")
+                if tab_data.get("auto_mode"):
+                    tab_data["auto_status_label"].setText("Нічого не знайдено в цей цикл")
+                    tab_data["auto_status_label"].setStyleSheet("color: #b00; font-style: italic;")
+
+        except Exception as e:
+            print(f"Auto scan error: {e}")
+            tab_data["auto_status_label"].setText(f"Помилка: {e}")
+            tab_data["auto_status_label"].setStyleSheet("color: red;")
+
+    def update_auto_scan_table(self, tab_data):
+        results = tab_data.get("auto_scan_results", [])
+        table = tab_data.get("auto_scan_table")
+        if table is None:
+            return
+        table.setRowCount(len(results))
+        for row, item in enumerate(results):
+            sym_item = QTableWidgetItem(item["symbol"])
+            rate_item = QTableWidgetItem(f"{item['rate']:+.4f}%")
+            secs_item = QTableWidgetItem(f"{item['secs']:.1f} сек")
+
+            # Підсвітка обраної монети
+            if item["symbol"] == tab_data.get("auto_selected_symbol"):
+                for cell in (sym_item, rate_item, secs_item):
+                    cell.setBackground(Qt.GlobalColor.green)
+
+            # Колір по знаку фандингу
+            color = Qt.GlobalColor.darkGreen if item["rate"] > 0 else Qt.GlobalColor.darkRed
+            rate_item.setForeground(color)
+
+            table.setItem(row, 0, sym_item)
+            table.setItem(row, 1, rate_item)
+            table.setItem(row, 2, secs_item)
+        table.resizeColumnsToContents()
+
+    # ─── КІНЕЦЬ АВТО-РЕЖИМУ ────────────────────────────────────────────────────
 
     def create_tab_ui(self, layout, tab_data):
         # Ліва колонка — контроли (фіксована ширина)
@@ -345,14 +557,11 @@ class FundingTraderApp(QMainWindow):
         center_layout.setContentsMargins(4, 0, 4, 0)
         self.add_funding_web_view(center_layout, tab_data)
 
-        # Права колонка — місце для майбутніх функцій (розтягується)
+        # Права колонка — авто-режим сканування
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(4, 0, 0, 0)
-        placeholder = QLabel("[ Тут буде новий функціонал ]")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder.setStyleSheet("color: #aaa; font-size: 14px; border: 1px dashed #ccc; border-radius: 6px;")
-        right_layout.addWidget(placeholder)
+        right_layout.setContentsMargins(8, 4, 4, 4)
+        self.add_auto_scan_ui(right_layout, tab_data)
         tab_data["future_panel"] = right_widget
 
         hbox = QHBoxLayout()
@@ -751,6 +960,8 @@ class FundingTraderApp(QMainWindow):
         if tab_data not in self.tab_data_list or not tab_data["funding_data"]: 
             self.reset_tab_labels_to_defaults(tab_data)
             return
+        # Авто-сканування: перевіряємо чи час запускати пошук монет
+        self.check_auto_scan_trigger(tab_data)
         symbol = tab_data["funding_data"]["symbol"]
         rate = tab_data["funding_data"]["funding_rate"]
         time_val = tab_data["funding_data"]["funding_time"]
