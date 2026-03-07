@@ -26,7 +26,7 @@ class FundingTraderApp(QMainWindow):
         self.language = self.load_language()
         self.trans = translations[self.language]
         self.setWindowTitle(self.trans["window_title"].format(exchange))
-        self.setGeometry(100, 100, 1200, 900)
+        self.setGeometry(100, 100, 1800, 900) # n n ширина висота
         self.set_window_icon()
 
         self.central_widget = QWidget()
@@ -336,7 +336,6 @@ class FundingTraderApp(QMainWindow):
 
         right_layout = QVBoxLayout()
         self.add_funding_web_view(right_layout, tab_data)
-        self.add_coinglass_view(right_layout, tab_data)
 
         hbox = QHBoxLayout()
         hbox.addLayout(left_layout, 1)
@@ -521,22 +520,6 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(view)
         self.update_tab_funding_web_view(tab_data)
 
-    def add_coinglass_view(self, layout, tab_data):
-        profile = QWebEngineProfile(f"CoinglassProfile_{self.tab_count}", self)
-        cache_path = os.path.join(os.getcwd(), "webcache", f"coinglass_tab_{self.tab_count}")
-        os.makedirs(cache_path, exist_ok=True)
-        profile.setCachePath(cache_path)
-        profile.setPersistentStoragePath(cache_path)
-        profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
-        view = QWebEngineView()
-        page = QWebEnginePage(profile, view)
-        view.setPage(page)
-        view.setMinimumHeight(150)
-        view.setUrl(QUrl("https://www.coinglass.com/FundingRate"))
-        tab_data["coinglass_view"] = view
-        tab_data["coinglass_profile"] = profile
-        layout.addWidget(view)
-
     def init_tab_timers(self, tab_data):
         timer = QTimer()
         timer.timeout.connect(lambda: self.check_tab_funding_time(tab_data))
@@ -696,7 +679,6 @@ class FundingTraderApp(QMainWindow):
             tab_data["funding_web_view"].setVisible(True)
         else:
             tab_data["funding_web_view"].setVisible(False)
-        tab_data["coinglass_view"].setVisible(True)
 
     def update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2):
         if tab_data not in self.tab_data_list: return
