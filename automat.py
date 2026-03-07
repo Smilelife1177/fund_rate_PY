@@ -90,17 +90,21 @@ def save_to_csv(data: list[dict], filepath: str, top_n: int = 50) -> None:
         "fetched_at",
     ]
 
-    fetched_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    from datetime import timezone, timedelta
+    tz_plus2 = timezone(timedelta(hours=2))
+    fetched_at = datetime.now(tz=tz_plus2).strftime("%Y-%m-%d %H:%M:%S UTC+2")
 
     with open(filepath, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
         for rank, row in enumerate(top_data, start=1):
-            # Convert next_funding_time from ms timestamp if available
+            # Convert next_funding_time from ms timestamp if available (UTC+2)
             nft = row["next_funding_time"]
             if nft and nft != "N/A" and str(nft).isdigit():
-                nft = datetime.utcfromtimestamp(int(nft) / 1000).strftime("%Y-%m-%d %H:%M:%S UTC")
+                from datetime import timezone, timedelta
+                tz_plus2 = timezone(timedelta(hours=2))
+                nft = datetime.fromtimestamp(int(nft) / 1000, tz=tz_plus2).strftime("%Y-%m-%d %H:%M:%S UTC+2")
 
             writer.writerow({
                 "rank": rank,
