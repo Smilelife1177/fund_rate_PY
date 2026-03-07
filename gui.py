@@ -26,7 +26,7 @@ class FundingTraderApp(QMainWindow):
         self.language = self.load_language()
         self.trans = translations[self.language]
         self.setWindowTitle(self.trans["window_title"].format(exchange))
-        self.setGeometry(100, 100, 1800, 900) # n n ширина висота
+        self.setGeometry(100, 100, 1800, 1000)   # n n ширина висота
         self.set_window_icon()
 
         self.central_widget = QWidget()
@@ -318,8 +318,11 @@ class FundingTraderApp(QMainWindow):
         self.save_settings()
 
     def create_tab_ui(self, layout, tab_data):
-        # Створення UI елементів (скорочено, групуємо в ліву та праву колонки)
-        left_layout = QVBoxLayout()
+        # Ліва колонка — контроли (фіксована ширина)
+        left_widget = QWidget()
+        left_widget.setFixedWidth(320) #розмір самої лівої колонки
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         self.add_exchange_ui(left_layout, tab_data)
         self.add_testnet_ui(left_layout, tab_data)
         self.add_coin_ui(left_layout, tab_data)
@@ -333,13 +336,30 @@ class FundingTraderApp(QMainWindow):
         self.add_reverse_side_ui(left_layout, tab_data)
         self.add_info_labels(left_layout, tab_data)
         self.add_buttons(left_layout, tab_data)
+        left_layout.addStretch()
 
-        right_layout = QVBoxLayout()
-        self.add_funding_web_view(right_layout, tab_data)
+        # Центральна колонка — Bybit WebView (фіксована ширина, не розтягується)
+        center_widget = QWidget()
+        center_widget.setFixedWidth(600)#розмір вкладки байбіта (центральна колонка)
+        center_layout = QVBoxLayout(center_widget)
+        center_layout.setContentsMargins(4, 0, 4, 0)
+        self.add_funding_web_view(center_layout, tab_data)
+
+        # Права колонка — місце для майбутніх функцій (розтягується)
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(4, 0, 0, 0)
+        placeholder = QLabel("[ Тут буде новий функціонал ]")
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder.setStyleSheet("color: #aaa; font-size: 14px; border: 1px dashed #ccc; border-radius: 6px;")
+        right_layout.addWidget(placeholder)
+        tab_data["future_panel"] = right_widget
 
         hbox = QHBoxLayout()
-        hbox.addLayout(left_layout, 1)
-        hbox.addLayout(right_layout, 1)
+        hbox.setSpacing(8)
+        hbox.addWidget(left_widget)
+        hbox.addWidget(center_widget)
+        hbox.addWidget(right_widget, 1)
         layout.addLayout(hbox)
 
     def add_exchange_ui(self, layout, tab_data):
