@@ -17,14 +17,14 @@ from logic import (
     get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, 
     get_optimal_limit_price, get_candle_open_price, place_stop_loss_order, get_order_execution_price
 )
-from translations import translations  # Імпорт з окремого файлу
+from translations import translations 
 
 class FundingTraderApp(QMainWindow):
     def __init__(self, session, testnet, exchange):
         super().__init__()
         self.settings_path = r"scripts\settings.json"
         self.language = self.load_language()
-        self.trans = translations[self.language]  # Скорочення для зручності
+        self.trans = translations[self.language]
         self.setWindowTitle(self.trans["window_title"].format(exchange))
         self.setGeometry(100, 100, 1200, 900)
         self.set_window_icon()

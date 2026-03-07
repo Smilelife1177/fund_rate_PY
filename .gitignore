@@ -9,3 +9,5 @@ __pycache__
 #web cookies and cache
 /webcache
 venv
+.vscode
+settings.json
