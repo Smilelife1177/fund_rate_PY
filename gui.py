@@ -104,7 +104,9 @@ class FundingTraderApp(QMainWindow):
 
         stats_layout.addLayout(btn_layout)
 
-        self.tab_widget.addTab(stats_tab, "Statistics" if self.language == "en" else "Статистика")
+        stats_index = self.tab_widget.addTab(stats_tab, "Statistics" if self.language == "en" else "Статистика")
+        self.tab_widget.tabBar().setTabButton(stats_index, QTabBar.ButtonPosition.RightSide, None)
+        self.tab_widget.tabBar().setTabButton(stats_index, QTabBar.ButtonPosition.LeftSide, None)
 
 ###
     STATS_CSV_FILE = "trade_stats.csv"
@@ -572,6 +574,8 @@ class FundingTraderApp(QMainWindow):
 
         table.resizeColumnsToContents()
         table.setColumnWidth(3, 80)
+
+    # ─── КІНЕЦЬ АВТО-РЕЖИМУ ────────────────────────────────────────────────────
 
     def create_tab_ui(self, layout, tab_data):
         # Ліва колонка — контроли (фіксована ширина)
@@ -1156,7 +1160,11 @@ class FundingTraderApp(QMainWindow):
             self.update_tab_funding_data(tab_data)
 
     def close_tab(self, index):
-        if self.tab_widget.count() <= 1: return
+        # Ігноруємо вкладки поза tab_data_list (Statistics, "+" тощо)
+        if index >= len(self.tab_data_list):
+            return
+        if self.tab_widget.count() <= 1:
+            return
         tab_data = self.tab_data_list[index]
         tab_data["timer"].stop()
         tab_data["funding_refresh_timer"].stop()
