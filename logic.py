@@ -55,14 +55,18 @@ def get_account_balance(session, exchange):
         return None
 
 def get_funding_data(session, symbol, exchange):
+    """Fetch current (live) funding rate and next funding time via tickers endpoint."""
     try:
         print(f"Fetching funding rate for {symbol}...")
         if exchange == "Bybit":
-            response = session.get_funding_rate_history(category="linear", symbol=symbol, limit=1)
+            response = session.get_tickers(category="linear", symbol=symbol)
             if response["retCode"] == 0 and response["result"]["list"]:
-                funding_data = response["result"]["list"][0]
-                funding_rate = float(funding_data["fundingRate"]) * 100
-                funding_time = int(funding_data["fundingRateTimestamp"]) / 1000
+                ticker = response["result"]["list"][0]
+                funding_rate = float(ticker["fundingRate"]) * 100
+                # nextFundingTime is ms timestamp
+                next_ft_ms = int(ticker.get("nextFundingTime") or 0)
+                funding_time = next_ft_ms / 1000.0
+                print(f"Funding rate for {symbol}: {funding_rate:.4f}%, next at {funding_time}")
                 return {
                     "symbol": symbol,
                     "funding_rate": funding_rate,
@@ -75,6 +79,7 @@ def get_funding_data(session, symbol, exchange):
             response = session.get_premium_index(symbol=symbol)
             funding_rate = float(response["lastFundingRate"]) * 100
             funding_time = int(response["nextFundingTime"]) / 1000
+            print(f"Funding rate for {symbol}: {funding_rate:.4f}%, next at {funding_time}")
             return {
                 "symbol": symbol,
                 "funding_rate": funding_rate,

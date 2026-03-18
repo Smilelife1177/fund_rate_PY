@@ -780,13 +780,20 @@ class FundingTraderApp(QMainWindow):
         self.update_tab_funding_web_view(tab_data)
 
     def init_tab_timers(self, tab_data):
+        # Секундний таймер — відлік до фандингу та авто-сканування
         timer = QTimer()
         timer.timeout.connect(lambda: self.check_tab_funding_time(tab_data))
         timer.start(1000)
+        # Таймер оновлення фандинг-рейту — кожні 5 хвилин
+        funding_refresh_timer = QTimer()
+        funding_refresh_timer.timeout.connect(lambda: self.update_tab_funding_data(tab_data))
+        funding_refresh_timer.start(5 * 60 * 1000)
+        # Таймер пінгу
         ping_timer = QTimer()
         ping_timer.timeout.connect(lambda: self.update_tab_ping(tab_data))
         ping_timer.start(30000)
         tab_data["timer"] = timer
+        tab_data["funding_refresh_timer"] = funding_refresh_timer
         tab_data["ping_timer"] = ping_timer
 
     # Методи оновлення (групуємо)
@@ -1138,6 +1145,7 @@ class FundingTraderApp(QMainWindow):
         if self.tab_widget.count() <= 1: return
         tab_data = self.tab_data_list[index]
         tab_data["timer"].stop()
+        tab_data["funding_refresh_timer"].stop()
         tab_data["ping_timer"].stop()
         self.tab_widget.removeTab(index)
         self.tab_data_list.pop(index)
@@ -1146,6 +1154,7 @@ class FundingTraderApp(QMainWindow):
     def closeEvent(self, event):
         for td in self.tab_data_list:
             td["timer"].stop()
+            td["funding_refresh_timer"].stop()
             td["ping_timer"].stop()
         self.save_settings()
         event.accept()
