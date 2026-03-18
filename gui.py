@@ -514,6 +514,24 @@ class FundingTraderApp(QMainWindow):
             tab_data["auto_status_label"].setText(self.trans["auto_error"].format(e=e))
             tab_data["auto_status_label"].setStyleSheet("color: red;")
 
+    def format_funding_time(self, secs: float) -> str:
+        """Converts seconds to hh:mm:ss-style string, language-aware."""
+        if secs < 1:
+            return self.trans["auto_time_soon"]
+        total = int(secs)
+        h = total // 3600
+        m = (total % 3600) // 60
+        s = total % 60
+        if h > 0:
+            return self.trans["auto_time_format"].format(h=h, m=m, s=s)
+        t = self.trans["auto_time_format"]
+        # Build only m+s part by formatting with h=0 then stripping the hours token
+        if m > 0:
+            uk = self.language == "uk"
+            return f"{m}{'хв' if uk else 'm'} {s:02d}{'с' if uk else 's'}"
+        uk = self.language == "uk"
+        return f"{s}{'с' if uk else 's'}"
+
     def update_auto_scan_table(self, tab_data):
         results = tab_data.get("auto_scan_results", [])
         table = tab_data.get("auto_scan_table")
@@ -523,7 +541,7 @@ class FundingTraderApp(QMainWindow):
         for row, item in enumerate(results):
             sym_item = QTableWidgetItem(item["symbol"])
             rate_item = QTableWidgetItem(f"{item['rate']:+.4f}%")
-            secs_item = QTableWidgetItem(f"{item['secs']:.1f} сек")
+            secs_item = QTableWidgetItem(self.format_funding_time(item['secs']))
 
             # Підсвітка обраної монети
             if item["symbol"] == tab_data.get("auto_selected_symbol"):

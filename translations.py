@@ -61,7 +61,9 @@ translations = {
         "auto_col_time": "Time to Funding",
         "auto_scan_now_btn": "Scan Now",
         "auto_api_error": "Bybit API Error",
-        "auto_error": "Error: {e}"
+        "auto_error": "Error: {e}",
+        "auto_time_format": "{h}h {m}m {s}s",
+        "auto_time_soon": "<1s"
     },
     "uk": {
         "window_title": "{} Трейдер Фінансування",
@@ -124,6 +126,8 @@ translations = {
         "auto_col_time": "Час до фандингу",
         "auto_scan_now_btn": "Сканувати зараз",
         "auto_api_error": "Помилка API Bybit",
-        "auto_error": "Помилка: {e}"
+        "auto_error": "Помилка: {e}",
+        "auto_time_format": "{h}г {m}хв {s}с",
+        "auto_time_soon": "<1с"
     }
 }
