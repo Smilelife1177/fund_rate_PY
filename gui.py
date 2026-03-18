@@ -384,9 +384,10 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(results_label)
         tab_data["auto_results_label"] = results_label
 
-        table = QTableWidget(0, 3)
-        table.setHorizontalHeaderLabels([t["auto_col_symbol"], t["auto_col_rate"], t["auto_col_time"]])
-        table.horizontalHeader().setStretchLastSection(True)
+        table = QTableWidget(0, 4)
+        table.setHorizontalHeaderLabels([t["auto_col_symbol"], t["auto_col_rate"], t["auto_col_time"], t["auto_col_select"]])
+        table.horizontalHeader().setStretchLastSection(False)
+        table.horizontalHeader().setSectionResizeMode(0, table.horizontalHeader().ResizeMode.Stretch)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setMinimumHeight(300)
@@ -405,11 +406,13 @@ class FundingTraderApp(QMainWindow):
         tab_data["auto_mode"] = enabled
         tab_data["auto_scan_done_this_minute"] = False
         if enabled:
-            tab_data["auto_status_label"].setText(" Очікую потрібного моменту...")
+            tab_data["auto_status_label"].setText(self.trans["auto_status_waiting"])
             tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-style: italic;")
         else:
-            tab_data["auto_status_label"].setText(" Авто вимкнено")
+            tab_data["auto_status_label"].setText(self.trans["auto_status_disabled"])
             tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
+        self.update_auto_scan_table(tab_data)
+
 
     def check_auto_scan_trigger(self, tab_data):
         """Викликається кожну секунду. Запускає сканування за 60 сек до нового годинника."""
@@ -538,6 +541,7 @@ class FundingTraderApp(QMainWindow):
         if table is None:
             return
         table.setRowCount(len(results))
+        is_manual = not tab_data.get("auto_mode", False)
         for row, item in enumerate(results):
             sym_item = QTableWidgetItem(item["symbol"])
             rate_item = QTableWidgetItem(f"{item['rate']:+.4f}%")
@@ -555,9 +559,19 @@ class FundingTraderApp(QMainWindow):
             table.setItem(row, 0, sym_item)
             table.setItem(row, 1, rate_item)
             table.setItem(row, 2, secs_item)
-        table.resizeColumnsToContents()
 
-    # ─── КІНЕЦЬ АВТО-РЕЖИМУ ────────────────────────────────────────────────────
+            # Кнопка вибору — тільки в ручному режимі
+            if is_manual:
+                symbol = item["symbol"]
+                btn = QPushButton(self.trans["auto_col_select"])
+                btn.setFixedHeight(22)
+                btn.clicked.connect(lambda checked, s=symbol: self.update_tab_symbol(tab_data, s))
+                table.setCellWidget(row, 3, btn)
+            else:
+                table.setCellWidget(row, 3, None)
+
+        table.resizeColumnsToContents()
+        table.setColumnWidth(3, 80)
 
     def create_tab_ui(self, layout, tab_data):
         # Ліва колонка — контроли (фіксована ширина)
@@ -833,7 +847,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["auto_threshold_label"].setText(t["auto_min_funding_label"])
         tab_data["auto_results_label"].setText(t["auto_results_label"])
         tab_data["auto_scan_btn"].setText(t["auto_scan_now_btn"])
-        tab_data["auto_scan_table"].setHorizontalHeaderLabels([t["auto_col_symbol"], t["auto_col_rate"], t["auto_col_time"]])
+        tab_data["auto_scan_table"].setHorizontalHeaderLabels([t["auto_col_symbol"], t["auto_col_rate"], t["auto_col_time"], t["auto_col_select"]])
         combo = tab_data["auto_mode_combo"]
         combo.blockSignals(True)
         current_idx = combo.currentIndex()

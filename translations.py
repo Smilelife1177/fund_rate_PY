@@ -63,7 +63,8 @@ translations = {
         "auto_api_error": "Bybit API Error",
         "auto_error": "Error: {e}",
         "auto_time_format": "{h}h {m}m {s}s",
-        "auto_time_soon": "<1s"
+        "auto_time_soon": "<1s",
+        "auto_col_select": "Select"
     },
     "uk": {
         "window_title": "{} Трейдер Фінансування",
@@ -128,6 +129,7 @@ translations = {
         "auto_api_error": "Помилка API Bybit",
         "auto_error": "Помилка: {e}",
         "auto_time_format": "{h}г {m}хв {s}с",
-        "auto_time_soon": "<1с"
+        "auto_time_soon": "<1с",
+        "auto_col_select": "Вибрати"
     }
 }
