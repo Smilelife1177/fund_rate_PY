@@ -1,36 +1,62 @@
+"""
+gui.py — головне вікно застосунку FundingTrader.
+
+Залежності:
+    settings_manager  — завантаження / збереження JSON-налаштувань
+    stats_manager     — робота з CSV-статистикою угод
+    auto_scanner      — сканування монет за фандинг-ставкою
+    tab_data          — ініціалізація стану вкладки
+    logic             — API-виклики до бірж
+    translations      — словники перекладів
+"""
+
 import os
-from datetime import datetime, timezone
-import json
-import time
 import math
-import csv
+import time
+from datetime import datetime, timezone
+
 from PyQt6.QtWidgets import (
-    QMainWindow, QVBoxLayout, QWidget, QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider, QComboBox, QCheckBox, 
-    QMessageBox, QTabWidget, QToolButton, QTabBar, QScrollArea, QHBoxLayout, QTableWidget, QTableWidgetItem, QDialog, QDialogButtonBox, QTextEdit
+    QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
+    QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider,
+    QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton,
+    QTabBar, QScrollArea, QTableWidget, QTableWidgetItem,
+    QDialog, QDialogButtonBox, QTextEdit,
 )
 from PyQt6.QtCore import QTimer, Qt, QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
+
 from logic import (
-    get_account_balance, get_funding_data, get_current_price, get_next_funding_time, place_market_order, 
-    get_symbol_info, place_limit_close_order, update_ping, initialize_client, close_all_positions, 
-    get_optimal_limit_price, get_candle_open_price, place_stop_loss_order, get_order_execution_price
+    get_account_balance, get_funding_data, get_current_price,
+    get_next_funding_time, place_market_order, get_symbol_info,
+    place_limit_close_order, update_ping, initialize_client,
+    close_all_positions, get_optimal_limit_price, get_candle_open_price,
+    place_stop_loss_order, get_order_execution_price,
 )
-from translations import translations 
-import requests
-from PyQt6.QtCore import QThread, pyqtSignal
+from translations import translations
+import settings_manager as sm
+import stats_manager as stats
+from auto_scanner import scan_funding_opportunities, format_funding_time
+from tab_data import build_tab_data
+
+
+# ---------------------------------------------------------------------------
+# Головне вікно
+# ---------------------------------------------------------------------------
 
 class FundingTraderApp(QMainWindow):
     def __init__(self, session, testnet, exchange):
         super().__init__()
-        self.settings_path = r"scripts\settings.json"
-        self.language = self.load_language()
+        self.settings_path = sm.SETTINGS_PATH
+        self.language = sm.load_language(self.settings_path)
         self.trans = translations[self.language]
-        self.setWindowTitle(self.trans["window_title"].format(exchange))
-        self.setGeometry(100, 100, 1800, 1000)   # n n ширина висота
-        self.set_window_icon()
 
+        self.setWindowTitle(self.trans["window_title"].format(exchange))
+        self.setGeometry(100, 100, 1800, 1000)
+        self._set_window_icon()
+
+        # Центральний скролюємий віджет
         self.central_widget = QWidget()
         self.main_layout = QVBoxLayout(self.central_widget)
         scroll_area = QScrollArea()
@@ -40,302 +66,524 @@ class FundingTraderApp(QMainWindow):
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setCentralWidget(scroll_area)
 
-        self.init_language_selection()
-        self.init_tab_widget()
-        self.tab_data_list = []
+        self._init_language_selection()
+        self._init_tab_widget()
+
+        self.tab_data_list: list[dict] = []
         self.tab_count = 0
-        loaded_settings = self.load_settings()
-        initial_settings = loaded_settings[0] if loaded_settings else None
-        self.add_new_tab(session=session, testnet=testnet, exchange=exchange, settings=initial_settings)
-        self.init_stats_tab()
-        self.initialize_stats_csv()
-        self.update_stats_table()
+
+        # Додати поля для глобального авто-сканера
+        self._auto_scan_results: list = []
+        self._auto_scan_near_now: list = []
+        self._auto_scan_done_this_minute: bool = False
+
+        # Один глобальний таймер сканування
+        self._global_scan_timer = QTimer()
+        self._global_scan_timer.timeout.connect(self._global_auto_scan_tick)
+        self._global_scan_timer.start(1000)
+
+        loaded = sm.load_settings(self.settings_path)
+        initial = loaded[0] if loaded else {}
+        self.add_new_tab(session=session, testnet=testnet, exchange=exchange, settings=initial)
+
+        self._init_stats_tab()
+        stats.initialize_stats_csv()
+        self._update_stats_table()
+
         self.main_layout.addWidget(self.language_label)
         self.main_layout.addWidget(self.language_combobox)
         self.main_layout.addWidget(self.tab_widget)
-        self.save_settings()
+        self._save()
 
-    def set_window_icon(self):
-        icon_path = r"images\log.ico"
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
+    # ------------------------------------------------------------------ #
+    #  Ініціалізація вікна                                                #
+    # ------------------------------------------------------------------ #
+
+    def _set_window_icon(self):
+        path = r"images\log.ico"
+        if os.path.exists(path):
+            self.setWindowIcon(QIcon(path))
         else:
-            print(f"Icon file not found at: {icon_path}")
+            print(f"Icon not found: {path}")
 
-    def init_language_selection(self):
+    def _init_language_selection(self):
         self.language_label = QLabel(self.trans["language_label"])
         self.language_combobox = QComboBox()
         self.language_combobox.addItems(["English", "Українська"])
         self.language_combobox.setCurrentText("English" if self.language == "en" else "Українська")
-        self.language_combobox.currentTextChanged.connect(self.update_language)
+        self.language_combobox.currentTextChanged.connect(self._on_language_changed)
 
-    def init_tab_widget(self):
+    def _init_tab_widget(self):
         self.tab_widget = QTabWidget()
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.tabCloseRequested.connect(self.close_tab)
-        self.add_tab_button = QToolButton()
-        self.add_tab_button.setText("+")
-        self.add_tab_button.setFixedWidth(30)
-        self.add_tab_button.setStyleSheet("font-weight: bold; font-size: 16px;")
-        self.add_tab_button.clicked.connect(self.add_new_tab)
-        self.tab_widget.addTab(QWidget(), "+")
-        self.tab_widget.setTabEnabled(self.tab_widget.count() - 1, False)
-        self.tab_widget.tabBar().setTabButton(self.tab_widget.count() - 1, QTabBar.ButtonPosition.RightSide, self.add_tab_button)
 
-    def init_stats_tab(self):
-        stats_tab = QWidget()
-        stats_layout = QVBoxLayout(stats_tab)
+        add_btn = QToolButton()
+        add_btn.setText("+")
+        add_btn.setFixedWidth(30)
+        add_btn.setStyleSheet("font-weight: bold; font-size: 16px;")
+        add_btn.clicked.connect(self.add_new_tab)
+        self.add_tab_button = add_btn
+
+        self.tab_widget.addTab(QWidget(), "+")
+        last = self.tab_widget.count() - 1
+        self.tab_widget.setTabEnabled(last, False)
+        self.tab_widget.tabBar().setTabButton(last, QTabBar.ButtonPosition.RightSide, add_btn)
+
+    # ------------------------------------------------------------------ #
+    #  Вкладка статистики                                                 #
+    # ------------------------------------------------------------------ #
+
+    def _init_stats_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
 
         self.stats_table = QTableWidget()
         self.stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        stats_layout.addWidget(self.stats_table)
+        layout.addWidget(self.stats_table)
 
-        # Кнопки в рядок
-        btn_layout = QHBoxLayout()
-        
-        refresh_stats_button = QPushButton(self.trans["refresh_button"])
-        refresh_stats_button.clicked.connect(self.update_stats_table)
-        btn_layout.addWidget(refresh_stats_button)
+        btn_row = QHBoxLayout()
+        refresh_btn = QPushButton(self.trans["refresh_button"])
+        refresh_btn.clicked.connect(self._update_stats_table)
+        btn_row.addWidget(refresh_btn)
 
-        # Нова кнопка
-        add_trade_button = QPushButton("Додати угоду вручну" if self.language == "en" else "Додати угоду вручну")
-        add_trade_button.clicked.connect(self.open_stats_input_dialog)
-        btn_layout.addWidget(add_trade_button)
+        add_btn = QPushButton("Додати угоду вручну")
+        add_btn.clicked.connect(self._open_stats_input_dialog)
+        btn_row.addWidget(add_btn)
 
-        stats_layout.addLayout(btn_layout)
+        layout.addLayout(btn_row)
 
-        stats_index = self.tab_widget.addTab(stats_tab, "Statistics" if self.language == "en" else "Статистика")
-        self.tab_widget.tabBar().setTabButton(stats_index, QTabBar.ButtonPosition.RightSide, None)
-        self.tab_widget.tabBar().setTabButton(stats_index, QTabBar.ButtonPosition.LeftSide, None)
+        idx = self.tab_widget.addTab(tab, "Statistics" if self.language == "en" else "Статистика")
+        self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, None)
+        self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.LeftSide, None)
 
-###
-    STATS_CSV_FILE = "trade_stats.csv"
-    STATS_HEADERS = ["Дата_Час", "Процент", "Фандинг", "Прибиль", "Доход", "Комисия", "Обєм", "В-сделке", "Тикер"]
+    def _update_stats_table(self):
+        rows = stats.read_stats_csv()
+        if not rows:
+            self.stats_table.clear()
+            return
+        headers, data_rows = rows[0], rows[1:]
+        self.stats_table.setColumnCount(len(headers))
+        self.stats_table.setHorizontalHeaderLabels(headers)
+        self.stats_table.setRowCount(len(data_rows))
+        for r, row in enumerate(data_rows):
+            for c, val in enumerate(row):
+                self.stats_table.setItem(r, c, QTableWidgetItem(val))
+        self.stats_table.resizeColumnsToContents()
 
-    def initialize_stats_csv(self):
-        """Створює файл статистики, якщо його ще немає"""
-        if not os.path.exists(self.STATS_CSV_FILE):
-            with open(self.STATS_CSV_FILE, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-                writer.writerow(self.STATS_HEADERS)
-
-    def process_stats_input(self, data):
-        """Обробка введеного рядка (майже без змін з stats.py)"""
-        import re
-        data = re.sub(r'\s*\$\s*', ' ', data)  # Замінюємо $ на пробіл
-        values = [v.strip() for v in re.split(r'\s+', data.strip()) if v.strip()]
-        if len(values) != 8:
-            QMessageBox.warning(
-                self,
-                "Помилка введення",
-                f"Очікується 8 значень, отримано {len(values)}:\n\n{values}"
-            )
-            return None
-        return values
-
-    def write_stats_to_csv(self, values):
-        """Запис рядка в CSV"""
-        with open(self.STATS_CSV_FILE, 'a', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-            row = [current_time] + values
-            writer.writerow(row)
-
-    def open_stats_input_dialog(self):
-        """Відкриває вікно для введення даних угоди"""
+    def _open_stats_input_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Запис нової угоди")
         dialog.setMinimumWidth(500)
-
         layout = QVBoxLayout(dialog)
 
-        label = QLabel("Введіть дані у форматі:\nПроцент Фандинг Прибиль Доход Комисия Обєм В-сделке Тикер")
-        label.setWordWrap(True)
-        layout.addWidget(label)
+        layout.addWidget(QLabel(
+            "Введіть дані у форматі:\nПроцент Фандинг Прибиль Доход Комисия Обєм В-сделке Тикер"
+        ))
+        hint = QLabel("Приклад:\n2,43% -2,77 0,39 3,37 0,21 137 11с MYXUSDT")
+        hint.setStyleSheet("color: gray; font-style: italic;")
+        layout.addWidget(hint)
 
-        example = QLabel("Приклад:\n2,43% -2,77 0,39 3,37 0,21 137 11с MYXUSDT")
-        example.setStyleSheet("color: gray; font-style: italic;")
-        layout.addWidget(example)
-
-        input_field = QTextEdit()
-        input_field.setAcceptRichText(False)
-        input_field.setPlaceholderText("Вставте сюди дані...")
-        input_field.setFixedHeight(80)
-        layout.addWidget(input_field)
+        text_edit = QTextEdit()
+        text_edit.setAcceptRichText(False)
+        text_edit.setPlaceholderText("Вставте сюди дані...")
+        text_edit.setFixedHeight(80)
+        layout.addWidget(text_edit)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
 
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            user_input = input_field.toPlainText().strip()
-            if not user_input:
-                return
-
-            values = self.process_stats_input(user_input)
-            if values:
-                self.initialize_stats_csv()       # на всяк випадок
-                self.write_stats_to_csv(values)
-                QMessageBox.information(self, "Успіх", "Дані успішно записано в trade_stats.csv")
-                self.update_stats_table()         # оновлюємо таблицю одразу
-###
-    def update_stats_table(self):
-        if not os.path.exists("trade_stats.csv"):
-            self.stats_table.clear()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        with open("trade_stats.csv", 'r', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            data = list(reader)
-            if not data:
-                return
-            headers = data[0]
-            self.stats_table.setColumnCount(len(headers))
-            self.stats_table.setHorizontalHeaderLabels(headers)
-            self.stats_table.setRowCount(len(data) - 1)
-            for row_idx, row in enumerate(data[1:]):
-                for col_idx, val in enumerate(row):
-                    self.stats_table.setItem(row_idx, col_idx, QTableWidgetItem(val))
-            self.stats_table.resizeColumnsToContents()
+        raw = text_edit.toPlainText().strip()
+        if not raw:
+            return
 
-    def load_language(self):
-        if os.path.exists(self.settings_path):
-            try:
-                with open(self.settings_path, "r") as f:
-                    settings = json.load(f)
-                    return settings.get("language", "en")
-            except Exception as e:
-                print(f"Error loading language: {e}")
-        return "en"
+        values = stats.parse_stats_input(raw)
+        if values is None:
+            QMessageBox.warning(self, "Помилка введення", "Очікується 8 значень. Перевірте формат.")
+            return
 
-    def load_settings(self):
-        default_settings = {
-            "tabs": [{
-                "selected_symbol": "HYPERUSDT",
-                "funding_interval_hours": 1.0,
-                "reverse_side": False,
-                "entry_time_seconds": 5.0,
-                "qty": 45.0,
-                "profit_percentage": 1.0,
-                "leverage": 1.0,
-                "exchange": "Bybit",
-                "testnet": False,
-                "auto_limit": False,
-                "stop_loss_percentage": 0.5,
-                "stop_loss_enabled": True
-            }],
-            "language": "en"
-        }
-        try:
-            if os.path.exists(self.settings_path):
-                with open(self.settings_path, "r") as f:
-                    settings = json.load(f)
-                    # Оновлюємо кожну вкладку, додаючи reverse_side, якщо його немає
-                    tabs = settings.get("tabs", default_settings["tabs"])
-                    for tab in tabs:
-                        tab["reverse_side"] = tab.get("reverse_side", False)
-                    return tabs
-                
-                    # return settings.get("tabs", default_settings["tabs"])
-            return default_settings["tabs"]
-        except Exception as e:
-            print(f"Error loading settings: {e}")
-            return default_settings["tabs"]
+        stats.initialize_stats_csv()
+        stats.write_stats_row(values)
+        QMessageBox.information(self, "Успіх", "Дані успішно записано в trade_stats.csv")
+        self._update_stats_table()
 
-    def save_settings(self):
-        tabs = [
-            {
-                "selected_symbol": td["selected_symbol"],
-                "reverse_side": td["reverse_side"],
-                "funding_interval_hours": td["funding_interval_hours"],
-                "entry_time_seconds": td["entry_time_seconds"],
-                "qty": td["qty"],
-                "profit_percentage": td["profit_percentage"],
-                "leverage": td["leverage"],
-                "exchange": td["exchange"],
-                "testnet": td["testnet"],
-                "auto_limit": td["auto_limit"],
-                "stop_loss_percentage": td["stop_loss_percentage"],
-                "stop_loss_enabled": td["stop_loss_enabled"],
-                "auto_mode": td.get("auto_mode", False),
-                "auto_min_funding": td.get("auto_min_funding", 0.05),
-            } for td in self.tab_data_list
-        ]
-        settings = {"tabs": tabs, "language": self.language}
-        try:
-            with open(self.settings_path, "w") as f:
-                json.dump(settings, f, indent=4)
-        except Exception as e:
-            print(f"Error saving settings: {e}")
+    # ------------------------------------------------------------------ #
+    #  Вкладки з торговими налаштуваннями                                 #
+    # ------------------------------------------------------------------ #
 
     def add_new_tab(self, session=None, testnet=None, exchange=None, settings=None):
         self.tab_count += 1
         tab = QWidget()
         tab_layout = QVBoxLayout(tab)
-        tab_data = self.init_tab_data(settings or {}, session, testnet, exchange)
-        self.create_tab_ui(tab_layout, tab_data)
+        tab_data = build_tab_data(settings or {}, session, testnet, exchange)
+        self._create_tab_ui(tab_layout, tab_data)
         self.tab_data_list.append(tab_data)
-        self.tab_widget.insertTab(self.tab_widget.count() - 1, tab, self.trans["tab_title"].format(self.tab_count))
+        self.tab_widget.insertTab(
+            self.tab_widget.count() - 1, tab,
+            self.trans["tab_title"].format(self.tab_count),
+        )
         self.tab_widget.setCurrentWidget(tab)
         tab_data["tab_index"] = self.tab_count
-        self.init_tab_timers(tab_data)
-        self.update_tab_funding_data(tab_data)
+        self._init_tab_timers(tab_data)
+        self._update_tab_funding_data(tab_data)
         return tab_data
 
-    def init_tab_data(self, settings, session, testnet, exchange):
-        defaults = {
-            "selected_symbol": "HYPERUSDT",
-            "position_open": False,
-            "reverse_side": settings.get("reverse_side", False),
-            "update_count": 0,
-            "funding_interval_hours": 1.0 if exchange == "Bybit" else 8.0,
-            "entry_time_seconds": 5.0,
-            "qty": 45.0,
-            "profit_percentage": 1.0,
-            "leverage": 1.0,
-            "exchange": exchange or "Bybit",
-            "testnet": testnet or False,
-            "auto_limit": False,
-            "stop_loss_percentage": 0.5,
-            "stop_loss_enabled": True,
-            "funding_data": None,
-            "open_order_id": None,
-            "funding_time_price": None,
-            "limit_price": None,
-            "pre_funding_price": None,
-            # Авто-сканування
-            "auto_mode": settings.get("auto_mode", False),
-            "auto_min_funding": settings.get("auto_min_funding", 0.05),
-            "auto_scan_done_this_minute": False,
-            "auto_scan_results": [],
-            "auto_selected_symbol": None
-        }
-        defaults.update(settings)
-        defaults["session"] = session or initialize_client(defaults["exchange"], defaults["testnet"])
-        return defaults
+    # ---- Компоновка UI вкладки ---------------------------------------- #
 
-    def add_reverse_side_ui(self, layout, tab_data):
-        label = QLabel(self.trans["reverse_side_label"])
-        checkbox = QCheckBox(self.trans["reverse_side_checkbox"])
-        checkbox.setChecked(tab_data["reverse_side"])
-        checkbox.stateChanged.connect(lambda s: self.update_tab_reverse_side(tab_data, s))
+    def _create_tab_ui(self, layout, tab_data):
+        # Ліва колонка — налаштування
+        left = QWidget()
+        left.setFixedWidth(320)
+        left_l = QVBoxLayout(left)
+        left_l.setContentsMargins(0, 0, 0, 0)
+        self._add_exchange_ui(left_l, tab_data)
+        self._add_testnet_ui(left_l, tab_data)
+        self._add_coin_ui(left_l, tab_data)
+        self._add_funding_interval_ui(left_l, tab_data)
+        self._add_entry_time_ui(left_l, tab_data)
+        self._add_qty_ui(left_l, tab_data)
+        self._add_profit_percentage_ui(left_l, tab_data)
+        self._add_auto_limit_ui(left_l, tab_data)
+        self._add_leverage_ui(left_l, tab_data)
+        self._add_stop_loss_ui(left_l, tab_data)
+        self._add_reverse_side_ui(left_l, tab_data)
+        self._add_info_labels(left_l, tab_data)
+        self._add_action_buttons(left_l, tab_data)
+        left_l.addStretch()
+
+        # Центральна колонка — WebView Bybit
+        center = QWidget()
+        center.setFixedWidth(600)
+        center_l = QVBoxLayout(center)
+        center_l.setContentsMargins(4, 0, 4, 0)
+        self._add_funding_web_view(center_l, tab_data)
+
+        # Права колонка — авто-сканування
+        right = QWidget()
+        right_l = QVBoxLayout(right)
+        right_l.setContentsMargins(8, 4, 4, 4)
+        self._add_auto_scan_ui(right_l, tab_data)
+        tab_data["future_panel"] = right
+
+        hbox = QHBoxLayout()
+        hbox.setSpacing(8)
+        hbox.addWidget(left)
+        hbox.addWidget(center)
+        hbox.addWidget(right, 1)
+        layout.addLayout(hbox)
+
+    # ---- Ліва панель: окремі UI-блоки --------------------------------- #
+
+    def _add_exchange_ui(self, layout, tab_data):
+        label = QLabel(self.trans["exchange_label"])
+        combo = QComboBox()
+        combo.addItems(["Bybit", "Binance"])
+        combo.setCurrentText(tab_data["exchange"])
+        combo.currentTextChanged.connect(lambda v: self._on_exchange_changed(tab_data, v))
         layout.addWidget(label)
-        layout.addWidget(checkbox)
+        layout.addWidget(combo)
+        tab_data["exchange_label"] = label
+        tab_data["exchange_combobox"] = combo
+
+    def _add_testnet_ui(self, layout, tab_data):
+        label = QLabel(self.trans["testnet_label"])
+        cb = QCheckBox(self.trans["testnet_checkbox"])
+        cb.setChecked(tab_data["testnet"])
+        cb.stateChanged.connect(lambda s: self._on_testnet_changed(tab_data, s))
+        layout.addWidget(label)
+        layout.addWidget(cb)
+        tab_data["testnet_label"] = label
+        tab_data["testnet_checkbox"] = cb
+
+    def _add_coin_ui(self, layout, tab_data):
+        label = QLabel(self.trans["coin_input_label"])
+        field = QLineEdit(tab_data["selected_symbol"])
+        btn = QPushButton(self.trans["update_coin_button"])
+        btn.clicked.connect(lambda: self._on_symbol_changed(tab_data, field.text()))
+        layout.addWidget(label)
+        layout.addWidget(field)
+        layout.addWidget(btn)
+        tab_data["coin_input_label"] = label
+        tab_data["coin_input"] = field
+        tab_data["update_coin_button"] = btn
+
+    def _add_funding_interval_ui(self, layout, tab_data):
+        label = QLabel(self.trans["funding_interval_label"])
+        combo = QComboBox()
+        intervals = ["0.01", "1", "4", "8"] if tab_data["exchange"] == "Bybit" else ["8"]
+        combo.addItems(intervals)
+        formatted = str(float(tab_data["funding_interval_hours"])).rstrip(".0")
+        combo.setCurrentText(formatted)
+        combo.currentTextChanged.connect(lambda v: self._on_funding_interval_changed(tab_data, v))
+        layout.addWidget(label)
+        layout.addWidget(combo)
+        tab_data["funding_interval_label"] = label
+        tab_data["funding_interval_combobox"] = combo
+
+    def _add_entry_time_ui(self, layout, tab_data):
+        label = QLabel(self.trans["entry_time_label"])
+        spin = QDoubleSpinBox()
+        spin.setRange(0.5, 60.0)
+        spin.setValue(tab_data["entry_time_seconds"])
+        spin.setSingleStep(0.1)
+        spin.valueChanged.connect(lambda v: self._on_entry_time_changed(tab_data, v))
+        layout.addWidget(label)
+        layout.addWidget(spin)
+        tab_data["entry_time_label"] = label
+        tab_data["entry_time_spinbox"] = spin
+
+    def _add_qty_ui(self, layout, tab_data):
+        label = QLabel(self.trans["qty_label"])
+        spin = QDoubleSpinBox()
+        spin.setRange(0.001, 1_000_000.0)
+        spin.setValue(tab_data["qty"])
+        spin.setSingleStep(0.001)
+        spin.valueChanged.connect(lambda v: self._on_qty_changed(tab_data, v))
+        layout.addWidget(label)
+        layout.addWidget(spin)
+        tab_data["qty_label"] = label
+        tab_data["qty_spinbox"] = spin
+
+    def _add_profit_percentage_ui(self, layout, tab_data):
+        label = QLabel(self.trans["profit_percentage_label"])
+        spin = QDoubleSpinBox()
+        spin.setRange(0.1, 10.0)
+        spin.setValue(tab_data["profit_percentage"])
+        spin.setSingleStep(0.1)
+        spin.valueChanged.connect(lambda v: self._on_profit_pct_changed(tab_data, v))
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(10, 1000)
+        slider.setValue(int(tab_data["profit_percentage"] * 100))
+        slider.setSingleStep(10)
+        slider.valueChanged.connect(lambda v: self._on_profit_slider_changed(tab_data, v))
+        layout.addWidget(label)
+        layout.addWidget(spin)
+        layout.addWidget(slider)
+        tab_data["profit_percentage_label"] = label
+        tab_data["profit_percentage_spinbox"] = spin
+        tab_data["profit_percentage_slider"] = slider
+
+    def _add_auto_limit_ui(self, layout, tab_data):
+        label = QLabel(self.trans["auto_limit_label"])
+        cb = QCheckBox(self.trans["auto_limit_checkbox"])
+        cb.setChecked(tab_data["auto_limit"])
+        cb.stateChanged.connect(lambda s: self._on_auto_limit_changed(tab_data, s))
+        layout.addWidget(label)
+        layout.addWidget(cb)
+        tab_data["auto_limit_label"] = label
+        tab_data["auto_limit_checkbox"] = cb
+
+    def _add_leverage_ui(self, layout, tab_data):
+        label = QLabel(self.trans["leverage_label"])
+        spin = QDoubleSpinBox()
+        spin.setRange(1.0, 100.0)
+        spin.setValue(tab_data["leverage"])
+        spin.setSingleStep(0.1)
+        spin.valueChanged.connect(lambda v: self._on_leverage_changed(tab_data, v))
+        layout.addWidget(label)
+        layout.addWidget(spin)
+        tab_data["leverage_label"] = label
+        tab_data["leverage_spinbox"] = spin
+
+    def _add_stop_loss_ui(self, layout, tab_data):
+        en_label = QLabel(self.trans["stop_loss_enabled_label"])
+        en_cb = QCheckBox(self.trans["stop_loss_enabled_checkbox"])
+        en_cb.setChecked(tab_data["stop_loss_enabled"])
+        en_cb.stateChanged.connect(lambda s: self._on_stop_loss_enabled_changed(tab_data, s))
+        pct_label = QLabel(self.trans["stop_loss_percentage_label"])
+        pct_spin = QDoubleSpinBox()
+        pct_spin.setRange(0.1, 10.0)
+        pct_spin.setValue(tab_data["stop_loss_percentage"])
+        pct_spin.setSingleStep(0.1)
+        pct_spin.valueChanged.connect(lambda v: self._on_stop_loss_pct_changed(tab_data, v))
+        layout.addWidget(en_label)
+        layout.addWidget(en_cb)
+        layout.addWidget(pct_label)
+        layout.addWidget(pct_spin)
+        tab_data["stop_loss_enabled_label"] = en_label
+        tab_data["stop_loss_enabled_checkbox"] = en_cb
+        tab_data["stop_loss_percentage_label"] = pct_label
+        tab_data["stop_loss_percentage_spinbox"] = pct_spin
+
+    def _add_reverse_side_ui(self, layout, tab_data):
+        label = QLabel(self.trans["reverse_side_label"])
+        cb = QCheckBox(self.trans["reverse_side_checkbox"])
+        cb.setChecked(tab_data["reverse_side"])
+        cb.stateChanged.connect(lambda s: self._on_reverse_side_changed(tab_data, s))
+        layout.addWidget(label)
+        layout.addWidget(cb)
         tab_data["reverse_side_label"] = label
-        tab_data["reverse_side_checkbox"] = checkbox
+        tab_data["reverse_side_checkbox"] = cb
 
-    def update_tab_reverse_side(self, tab_data, state):
-        if tab_data not in self.tab_data_list: return
-        tab_data["reverse_side"] = state == Qt.CheckState.Checked.value
-        self.save_settings()
+    def _add_info_labels(self, layout, tab_data):
+        fields = {
+            "funding_info_label": self.trans["funding_info_label"],
+            "price_label":        self.trans["price_label"],
+            "balance_label":      self.trans["balance_label"],
+            "leveraged_balance_label": self.trans["leveraged_balance_label"],
+            "volume_label":       self.trans["volume_label"],
+            "ping_label":         self.trans["ping_label"],
+        }
+        for key, text in fields.items():
+            lbl = QLabel(text)
+            layout.addWidget(lbl)
+            tab_data[key] = lbl
 
-    # ─── АВТО-РЕЖИМ ────────────────────────────────────────────────────────────
+    def _add_action_buttons(self, layout, tab_data):
+        refresh = QPushButton(self.trans["refresh_button"])
+        refresh.clicked.connect(lambda: self._update_tab_funding_data(tab_data))
+        close_all = QPushButton(self.trans["close_all_trades_button"])
+        close_all.setStyleSheet("background-color: red; color: white; font-weight: bold;")
+        close_all.clicked.connect(lambda: self._handle_close_all_trades(tab_data))
+        layout.addWidget(refresh)
+        layout.addWidget(close_all)
+        tab_data["refresh_button"] = refresh
+        tab_data["close_all_trades_button"] = close_all
 
-    def add_auto_scan_ui(self, layout, tab_data):
-        """Права панель: перемикач ручний/авто + таблиця результатів сканування."""
+    # ---- WebView ------------------------------------------------------- #
+
+    def _add_funding_web_view(self, layout, tab_data):
+        profile = QWebEngineProfile(f"BybitProfile_{self.tab_count}", self)
+        cache_path = os.path.join(os.getcwd(), "webcache", f"tab_{self.tab_count}")
+        os.makedirs(cache_path, exist_ok=True)
+        profile.setCachePath(cache_path)
+        profile.setPersistentStoragePath(cache_path)
+        profile.setPersistentCookiesPolicy(
+            QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
+        )
+        view = QWebEngineView()
+        view.setPage(QWebEnginePage(profile, view))
+        view.setMinimumHeight(150)
+        tab_data["funding_web_view"] = view
+        tab_data["web_profile"] = profile
+        layout.addWidget(view)
+        self._refresh_web_view(tab_data)
+
+    def _refresh_web_view(self, tab_data):
+        if tab_data not in self.tab_data_list:
+            return
+        symbol = tab_data["selected_symbol"]
+        if tab_data["exchange"] == "Bybit":
+            tab_data["funding_web_view"].setUrl(QUrl(f"https://www.bybit.com/trade/usdt/{symbol}"))
+            tab_data["funding_web_view"].setVisible(True)
+        else:
+            tab_data["funding_web_view"].setVisible(False)
+
+    # ---- Авто-сканування UI ------------------------------------------- #
+
+    def _global_auto_scan_tick(self):
+        """Один глобальний тік — замість N тіків по вкладках."""
+        now = datetime.now(timezone.utc)
+        secs_into_hour = now.minute * 60 + now.second
+        secs_left = 3600 - secs_into_hour
+
+        if secs_left > 60:
+            self._auto_scan_done_this_minute = False
+            return
+
+        if self._auto_scan_done_this_minute:
+            return
+
+        # Перевіряємо, чи є хоча б одна вкладка з auto_mode=True
+        auto_tabs = [td for td in self.tab_data_list if td.get("auto_mode")]
+        if not auto_tabs:
+            return
+
+        self._auto_scan_done_this_minute = True
+
+        # Один спільний скан для всіх
+        threshold = min(td.get("auto_min_funding", 0.05) for td in auto_tabs)
+        try:
+            all_above, near_now = scan_funding_opportunities(threshold)
+            self._auto_scan_results = all_above
+            self._auto_scan_near_now = near_now
+        except Exception as e:
+            print(f"Global auto scan error: {e}")
+            return
+
+        # Роздаємо результати кожній вкладці з auto_mode=True
+        used_symbols = set()
+        # for td in auto_tabs:
+        #     self._apply_scan_result_to_tab(td, all_above, near_now, used_symbols)
+        # СТАЛО:
+        self._spawn_tabs_from_scan(near_now)
+
+        # Оновити статус у всіх авто-вкладках
+        for td in auto_tabs:
+            td["auto_scan_results"] = all_above
+            self._update_auto_scan_table(td)
+            if near_now:
+                td["auto_status_label"].setText(
+                    self.trans["auto_status_found"].format(n=len(all_above), symbol=near_now[0]["symbol"])
+                )
+            elif all_above:
+                td["auto_status_label"].setText(
+                    self.trans["auto_status_watching"].format(n=len(all_above))
+                )
+            else:
+                td["auto_status_label"].setText(self.trans["auto_status_none"])
+    #
+
+    def _spawn_tabs_from_scan(self, near_now: list):
+        """Створює нові вкладки під кожну знайдену монету (якщо вкладки ще немає)."""
+        # Збираємо символи що вже відкриті
+        existing_symbols = {td["selected_symbol"] for td in self.tab_data_list}
+        created = 0
+        MAX_AUTO_TABS = 5
+
+        for coin in near_now:
+            if created >= MAX_AUTO_TABS:
+                break
+            symbol = coin["symbol"]
+            if symbol in existing_symbols:
+                continue  # вкладка вже є — не дублюємо
+
+            # Беремо налаштування з першої вкладки як шаблон
+            template = self.tab_data_list[0] if self.tab_data_list else {}
+            new_settings = {
+                "exchange":               template.get("exchange", "Bybit"),
+                "testnet":                template.get("testnet", False),
+                "selected_symbol":        symbol,
+                "funding_interval_hours": template.get("funding_interval_hours", 8),
+                "entry_time_seconds":     template.get("entry_time_seconds", 5),
+                "qty":                    template.get("qty", 1.0),
+                "profit_percentage":      template.get("profit_percentage", 1.0),
+                "auto_limit":             template.get("auto_limit", False),
+                "leverage":               template.get("leverage", 1.0),
+                "stop_loss_percentage":   template.get("stop_loss_percentage", 1.0),
+                "stop_loss_enabled":      template.get("stop_loss_enabled", False),
+                "reverse_side":           template.get("reverse_side", False),
+                "auto_mode":              False,  # нові вкладки — ручний режим
+                "auto_min_funding":       template.get("auto_min_funding", 0.05),
+            }
+
+            session = template.get("session") if template else None
+            testnet = new_settings["testnet"]
+            exchange = new_settings["exchange"]
+
+            new_td = self.add_new_tab(
+                session=session,
+                testnet=testnet,
+                exchange=exchange,
+                settings=new_settings,
+            )
+            # Явно виставляємо символ після створення вкладки
+            new_td["selected_symbol"] = symbol
+            new_td["coin_input"].setText(symbol)
+            self._refresh_web_view(new_td)
+            self.tab_widget.setTabText(self.tab_data_list.index(new_td), symbol)
+
+            existing_symbols.add(symbol)
+            created += 1
+
+
+    def _add_auto_scan_ui(self, layout, tab_data):
         t = self.trans
 
-        # Заголовок
         title = QLabel(t["auto_mode_title"])
         title.setStyleSheet("font-weight: bold; font-size: 13px;")
         layout.addWidget(title)
@@ -347,47 +595,51 @@ class FundingTraderApp(QMainWindow):
         mode_combo = QComboBox()
         mode_combo.addItems([t["auto_mode_manual"], t["auto_mode_auto"]])
         mode_combo.setCurrentIndex(1 if tab_data.get("auto_mode") else 0)
-        mode_combo.currentIndexChanged.connect(lambda i: (self.set_auto_mode(tab_data, i == 1), self.save_settings()))
+        mode_combo.currentIndexChanged.connect(
+            lambda i: (self._set_auto_mode(tab_data, i == 1), self._save())
+        )
         mode_row.addWidget(mode_label)
         mode_row.addWidget(mode_combo)
         layout.addLayout(mode_row)
         tab_data["auto_mode_combo"] = mode_combo
         tab_data["auto_mode_label_widget"] = mode_label
 
-        # Мінімальний поріг фандингу
-        threshold_row = QHBoxLayout()
-        threshold_label = QLabel(t["auto_min_funding_label"])
-        threshold_spin = QDoubleSpinBox()
-        threshold_spin.setRange(0.001, 5.0)
-        threshold_spin.setSingleStep(0.005)
-        threshold_spin.setDecimals(3)
-        threshold_spin.setValue(tab_data.get("auto_min_funding", 0.05))
-        threshold_spin.valueChanged.connect(lambda v: (tab_data.update({"auto_min_funding": v}), self.save_settings()))
-        threshold_row.addWidget(threshold_label)
-        threshold_row.addWidget(threshold_spin)
-        layout.addLayout(threshold_row)
-        tab_data["auto_threshold_spin"] = threshold_spin
-        tab_data["auto_threshold_label"] = threshold_label
+        # Мінімальний поріг
+        thr_row = QHBoxLayout()
+        thr_label = QLabel(t["auto_min_funding_label"])
+        thr_spin = QDoubleSpinBox()
+        thr_spin.setRange(0.001, 5.0)
+        thr_spin.setSingleStep(0.005)
+        thr_spin.setDecimals(3)
+        thr_spin.setValue(tab_data.get("auto_min_funding", 0.05))
+        thr_spin.valueChanged.connect(
+            lambda v: (tab_data.update({"auto_min_funding": v}), self._save())
+        )
+        thr_row.addWidget(thr_label)
+        thr_row.addWidget(thr_spin)
+        layout.addLayout(thr_row)
+        tab_data["auto_threshold_spin"] = thr_spin
+        tab_data["auto_threshold_label"] = thr_label
 
-        # Статус наступного сканування
         status_label = QLabel(t["auto_status_disabled"])
         status_label.setStyleSheet("color: #555; font-style: italic;")
         layout.addWidget(status_label)
         tab_data["auto_status_label"] = status_label
 
-        # Обрана монета
         chosen_label = QLabel(t["auto_chosen_none"])
         chosen_label.setStyleSheet("font-weight: bold; color: #1a6e1a;")
         layout.addWidget(chosen_label)
         tab_data["auto_chosen_label"] = chosen_label
 
-        # Таблиця результатів
         results_label = QLabel(t["auto_results_label"])
         layout.addWidget(results_label)
         tab_data["auto_results_label"] = results_label
 
         table = QTableWidget(0, 4)
-        table.setHorizontalHeaderLabels([t["auto_col_symbol"], t["auto_col_rate"], t["auto_col_time"], t["auto_col_select"]])
+        table.setHorizontalHeaderLabels([
+            t["auto_col_symbol"], t["auto_col_rate"],
+            t["auto_col_time"], t["auto_col_select"],
+        ])
         table.horizontalHeader().setStretchLastSection(False)
         table.horizontalHeader().setSectionResizeMode(0, table.horizontalHeader().ResizeMode.Stretch)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -396,122 +648,57 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(table)
         tab_data["auto_scan_table"] = table
 
-        # Кнопка ручного сканування
         scan_btn = QPushButton(t["auto_scan_now_btn"])
-        scan_btn.clicked.connect(lambda: self.run_auto_scan(tab_data))
+        scan_btn.clicked.connect(lambda: self._run_auto_scan(tab_data))
         layout.addWidget(scan_btn)
         tab_data["auto_scan_btn"] = scan_btn
 
         layout.addStretch()
 
-    def set_auto_mode(self, tab_data, enabled: bool):
+    def _set_auto_mode(self, tab_data, enabled: bool):
         tab_data["auto_mode"] = enabled
         tab_data["auto_scan_done_this_minute"] = False
+        t = self.trans
         if enabled:
-            tab_data["auto_status_label"].setText(self.trans["auto_status_waiting"])
+            tab_data["auto_status_label"].setText(t["auto_status_waiting"])
             tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-style: italic;")
         else:
-            tab_data["auto_status_label"].setText(self.trans["auto_status_disabled"])
+            tab_data["auto_status_label"].setText(t["auto_status_disabled"])
             tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
-        self.update_auto_scan_table(tab_data)
+        self._update_auto_scan_table(tab_data)
 
-
-    def check_auto_scan_trigger(self, tab_data):
-        """Викликається кожну секунду. Запускає сканування за 60 сек до нового годинника."""
-        if not tab_data.get("auto_mode"):
-            return
-
-        now = datetime.now(timezone.utc)
-        seconds_into_hour = now.minute * 60 + now.second
-        seconds_left_in_hour = 3600 - seconds_into_hour   # скільки секунд до нового годинника
-
-        # Оновлюємо статус-лейбл
-        if seconds_left_in_hour > 60:
-            mins = (seconds_left_in_hour - 60) // 60
-            secs = (seconds_left_in_hour - 60) % 60
-            tab_data["auto_status_label"].setText(self.trans["auto_status_countdown"].format(mins=mins, secs=secs))
-            tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
-            tab_data["auto_scan_done_this_minute"] = False   # скидаємо прапор для нового циклу
-        elif seconds_left_in_hour <= 60 and not tab_data.get("auto_scan_done_this_minute"):
-            tab_data["auto_status_label"].setText(self.trans["auto_status_scanning"])
-            tab_data["auto_status_label"].setStyleSheet("color: #e07b00; font-weight: bold;")
-            tab_data["auto_scan_done_this_minute"] = True
-            # Запускаємо сканування в окремому потоці щоб не блокувати UI
-            self.run_auto_scan(tab_data)
-
-    def run_auto_scan(self, tab_data):
-        """Сканує всі USDT-перп монети.
-        Таблиця: всі монети де |фандинг| >= поріг (будь-який час).
-        Авто-вибір: серед них тільки ті де фандинг <= 60 сек.
-        """
+    def _run_auto_scan(self, tab_data):
         try:
             threshold = tab_data.get("auto_min_funding", 0.05)
-            url = "https://api.bybit.com/v5/market/tickers"
-            resp = requests.get(url, params={"category": "linear"}, timeout=8)
-            resp.raise_for_status()
-            data = resp.json()
+            all_above, near_now = scan_funding_opportunities(threshold)
 
-            if data.get("retCode") != 0:
-                tab_data["auto_status_label"].setText(self.trans["auto_api_error"])
-                return
+            tab_data["auto_scan_results"] = all_above
+            self._update_auto_scan_table(tab_data)
 
-            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-            all_above_threshold = []   # всі монети вище порогу — для таблиці
-            near_funding = []          # з них тільки де фандинг <= 60 сек — для авто-вибору
+            t = self.trans
+            # Визначаємо найкращу монету — near_now має пріоритет, інакше перша з all_above
+            best = near_now[0] if near_now else (all_above[0] if all_above else None)
 
-            for item in data["result"]["list"]:
-                symbol = item.get("symbol", "")
-                if not symbol.endswith("USDT"):
-                    continue
-                try:
-                    rate = float(item.get("fundingRate") or 0)
-                    next_ft_ms = int(item.get("nextFundingTime") or 0)
-                except (ValueError, TypeError):
-                    continue
-
-                if next_ft_ms == 0:
-                    continue
-
-                rate_pct = rate * 100
-                if abs(rate_pct) < threshold:
-                    continue
-
-                secs_to_funding = (next_ft_ms - now_ms) / 1000.0
-
-                entry = {"symbol": symbol, "rate": rate_pct, "secs": secs_to_funding}
-                all_above_threshold.append(entry)
-
-                if 0 <= secs_to_funding <= 60:
-                    near_funding.append(entry)
-
-            all_above_threshold.sort(key=lambda x: abs(x["rate"]), reverse=True)
-            near_funding.sort(key=lambda x: abs(x["rate"]), reverse=True)
-
-            tab_data["auto_scan_results"] = all_above_threshold
-            self.update_auto_scan_table(tab_data)
-
-            if near_funding:
-                best = near_funding[0]
-                tab_data["auto_selected_symbol"] = best["symbol"]
-                tab_data["auto_chosen_label"].setText(self.trans["auto_chosen_selected"].format(symbol=best["symbol"], rate=best["rate"]))
-                tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #1a6e1a;")
-                tab_data["selected_symbol"] = best["symbol"]
-                tab_data["coin_input"].setText(best["symbol"])
-                self.update_tab_funding_web_view(tab_data)
-                self.tab_widget.setTabText(self.tab_data_list.index(tab_data), best["symbol"])
-                self.save_settings()
-                self.update_tab_funding_data(tab_data)
-                tab_data["auto_status_label"].setText(self.trans["auto_status_found"].format(n=len(all_above_threshold), symbol=best["symbol"]))
+            if best:
+                symbol = best["symbol"]
+                tab_data["auto_selected_symbol"] = symbol
+                tab_data["selected_symbol"] = symbol
+                tab_data["coin_input"].setText(symbol)        # ← підставляємо в поле
+                self._refresh_web_view(tab_data)
+                self.tab_widget.setTabText(self.tab_data_list.index(tab_data), symbol)
+                self._save()
+                self._update_tab_funding_data(tab_data)
+                tab_data["auto_chosen_label"].setText(
+                    t["auto_chosen_selected"].format(symbol=symbol, rate=best["rate"])
+                )
+                tab_data["auto_status_label"].setText(
+                    t["auto_status_found"].format(n=len(all_above), symbol=symbol)
+                )
                 tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-weight: bold;")
-            elif all_above_threshold:
-                tab_data["auto_chosen_label"].setText(self.trans["auto_chosen_waiting"].format(n=len(all_above_threshold)))
-                tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #555;")
-                tab_data["auto_status_label"].setText(self.trans["auto_status_watching"].format(n=len(all_above_threshold)))
-                tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
             else:
-                tab_data["auto_chosen_label"].setText(self.trans["auto_chosen_not_found"])
+                tab_data["auto_chosen_label"].setText(t["auto_chosen_not_found"])
                 tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #b00;")
-                tab_data["auto_status_label"].setText(self.trans["auto_status_none"])
+                tab_data["auto_status_label"].setText(t["auto_status_none"])
                 tab_data["auto_status_label"].setStyleSheet("color: #b00; font-style: italic;")
 
         except Exception as e:
@@ -519,55 +706,34 @@ class FundingTraderApp(QMainWindow):
             tab_data["auto_status_label"].setText(self.trans["auto_error"].format(e=e))
             tab_data["auto_status_label"].setStyleSheet("color: red;")
 
-    def format_funding_time(self, secs: float) -> str:
-        """Converts seconds to hh:mm:ss-style string, language-aware."""
-        if secs < 1:
-            return self.trans["auto_time_soon"]
-        total = int(secs)
-        h = total // 3600
-        m = (total % 3600) // 60
-        s = total % 60
-        if h > 0:
-            return self.trans["auto_time_format"].format(h=h, m=m, s=s)
-        t = self.trans["auto_time_format"]
-        # Build only m+s part by formatting with h=0 then stripping the hours token
-        if m > 0:
-            uk = self.language == "uk"
-            return f"{m}{'хв' if uk else 'm'} {s:02d}{'с' if uk else 's'}"
-        uk = self.language == "uk"
-        return f"{s}{'с' if uk else 's'}"
-
-    def update_auto_scan_table(self, tab_data):
+    def _update_auto_scan_table(self, tab_data):
         results = tab_data.get("auto_scan_results", [])
         table = tab_data.get("auto_scan_table")
         if table is None:
             return
-        table.setRowCount(len(results))
         is_manual = not tab_data.get("auto_mode", False)
+        table.setRowCount(len(results))
         for row, item in enumerate(results):
             sym_item = QTableWidgetItem(item["symbol"])
             rate_item = QTableWidgetItem(f"{item['rate']:+.4f}%")
-            secs_item = QTableWidgetItem(self.format_funding_time(item['secs']))
+            time_item = QTableWidgetItem(format_funding_time(item["secs"], self.language))
 
-            # Підсвітка обраної монети
             if item["symbol"] == tab_data.get("auto_selected_symbol"):
-                for cell in (sym_item, rate_item, secs_item):
+                for cell in (sym_item, rate_item, time_item):
                     cell.setBackground(Qt.GlobalColor.green)
 
-            # Колір по знаку фандингу
-            color = Qt.GlobalColor.darkGreen if item["rate"] > 0 else Qt.GlobalColor.darkRed
-            rate_item.setForeground(color)
-
+            rate_item.setForeground(
+                Qt.GlobalColor.darkGreen if item["rate"] > 0 else Qt.GlobalColor.darkRed
+            )
             table.setItem(row, 0, sym_item)
             table.setItem(row, 1, rate_item)
-            table.setItem(row, 2, secs_item)
+            table.setItem(row, 2, time_item)
 
-            # Кнопка вибору — тільки в ручному режимі
             if is_manual:
                 symbol = item["symbol"]
                 btn = QPushButton(self.trans["auto_col_select"])
                 btn.setFixedHeight(22)
-                btn.clicked.connect(lambda checked, s=symbol: self.update_tab_symbol(tab_data, s))
+                btn.clicked.connect(lambda _, s=symbol: self._on_symbol_changed(tab_data, s))
                 table.setCellWidget(row, 3, btn)
             else:
                 table.setCellWidget(row, 3, None)
@@ -575,378 +741,277 @@ class FundingTraderApp(QMainWindow):
         table.resizeColumnsToContents()
         table.setColumnWidth(3, 80)
 
-    # ─── КІНЕЦЬ АВТО-РЕЖИМУ ────────────────────────────────────────────────────
+    def _check_auto_scan_trigger(self, tab_data):
+        if not tab_data.get("auto_mode"):
+            return
+        now = datetime.now(timezone.utc)
+        secs_into_hour = now.minute * 60 + now.second
+        secs_left = 3600 - secs_into_hour
+        t = self.trans
+        if secs_left > 60:
+            mins = (secs_left - 60) // 60
+            secs = (secs_left - 60) % 60
+            tab_data["auto_status_label"].setText(t["auto_status_countdown"].format(mins=mins, secs=secs))
+            tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
+            tab_data["auto_scan_done_this_minute"] = False
+        elif not tab_data.get("auto_scan_done_this_minute"):
+            tab_data["auto_status_label"].setText(t["auto_status_scanning"])
+            tab_data["auto_status_label"].setStyleSheet("color: #e07b00; font-weight: bold;")
+            tab_data["auto_scan_done_this_minute"] = True
+            self._run_auto_scan(tab_data)
 
-    def create_tab_ui(self, layout, tab_data):
-        # Ліва колонка — контроли (фіксована ширина)
-        left_widget = QWidget()
-        left_widget.setFixedWidth(320) #розмір самої лівої колонки
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        self.add_exchange_ui(left_layout, tab_data)
-        self.add_testnet_ui(left_layout, tab_data)
-        self.add_coin_ui(left_layout, tab_data)
-        self.add_funding_interval_ui(left_layout, tab_data)
-        self.add_entry_time_ui(left_layout, tab_data)
-        self.add_qty_ui(left_layout, tab_data)
-        self.add_profit_percentage_ui(left_layout, tab_data)
-        self.add_auto_limit_ui(left_layout, tab_data)
-        self.add_leverage_ui(left_layout, tab_data)
-        self.add_stop_loss_ui(left_layout, tab_data)
-        self.add_reverse_side_ui(left_layout, tab_data)
-        self.add_info_labels(left_layout, tab_data)
-        self.add_buttons(left_layout, tab_data)
-        left_layout.addStretch()
+    # ------------------------------------------------------------------ #
+    #  Таймери                                                            #
+    # ------------------------------------------------------------------ #
 
-        # Центральна колонка — Bybit WebView (фіксована ширина, не розтягується)
-        center_widget = QWidget()
-        center_widget.setFixedWidth(600)#розмір вкладки байбіта (центральна колонка)
-        center_layout = QVBoxLayout(center_widget)
-        center_layout.setContentsMargins(4, 0, 4, 0)
-        self.add_funding_web_view(center_layout, tab_data)
-
-        # Права колонка — авто-режим сканування
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(8, 4, 4, 4)
-        self.add_auto_scan_ui(right_layout, tab_data)
-        tab_data["future_panel"] = right_widget
-
-        hbox = QHBoxLayout()
-        hbox.setSpacing(8)
-        hbox.addWidget(left_widget)
-        hbox.addWidget(center_widget)
-        hbox.addWidget(right_widget, 1)
-        layout.addLayout(hbox)
-
-    def add_exchange_ui(self, layout, tab_data):
-        label = QLabel(self.trans["exchange_label"])
-        combobox = QComboBox()
-        combobox.addItems(["Bybit", "Binance"])
-        combobox.setCurrentText(tab_data["exchange"])
-        combobox.currentTextChanged.connect(lambda v: self.update_tab_exchange(tab_data, v))
-        layout.addWidget(label)
-        layout.addWidget(combobox)
-        tab_data["exchange_label"] = label
-        tab_data["exchange_combobox"] = combobox
-
-    def add_testnet_ui(self, layout, tab_data):
-        label = QLabel(self.trans["testnet_label"])
-        checkbox = QCheckBox(self.trans["testnet_checkbox"])
-        checkbox.setChecked(tab_data["testnet"])
-        checkbox.stateChanged.connect(lambda s: self.update_tab_testnet(tab_data, s))
-        layout.addWidget(label)
-        layout.addWidget(checkbox)
-        tab_data["testnet_label"] = label
-        tab_data["testnet_checkbox"] = checkbox
-
-    def add_coin_ui(self, layout, tab_data):
-        label = QLabel(self.trans["coin_input_label"])
-        input_field = QLineEdit(tab_data["selected_symbol"])
-        button = QPushButton(self.trans["update_coin_button"])
-        button.clicked.connect(lambda: self.update_tab_symbol(tab_data, input_field.text()))
-        layout.addWidget(label)
-        layout.addWidget(input_field)
-        layout.addWidget(button)
-        tab_data["coin_input_label"] = label
-        tab_data["coin_input"] = input_field
-        tab_data["update_coin_button"] = button
-
-    def add_funding_interval_ui(self, layout, tab_data):
-        label = QLabel(self.trans["funding_interval_label"])
-        combobox = QComboBox()
-        intervals = ["0.01", "1", "4", "8"] if tab_data["exchange"] == "Bybit" else ["8"]
-        combobox.addItems(intervals)
-        formatted = str(float(tab_data["funding_interval_hours"])).rstrip(".0")
-        combobox.setCurrentText(formatted)
-        combobox.currentTextChanged.connect(lambda v: self.update_tab_funding_interval(tab_data, v))
-        layout.addWidget(label)
-        layout.addWidget(combobox)
-        tab_data["funding_interval_label"] = label
-        tab_data["funding_interval_combobox"] = combobox
-
-    def add_entry_time_ui(self, layout, tab_data):
-        label = QLabel(self.trans["entry_time_label"])
-        spinbox = QDoubleSpinBox()
-        spinbox.setRange(0.5, 60.0)
-        spinbox.setValue(tab_data["entry_time_seconds"])
-        spinbox.setSingleStep(0.1)
-        spinbox.valueChanged.connect(lambda v: self.update_tab_entry_time(tab_data, v))
-        layout.addWidget(label)
-        layout.addWidget(spinbox)
-        tab_data["entry_time_label"] = label
-        tab_data["entry_time_spinbox"] = spinbox
-
-    def add_qty_ui(self, layout, tab_data):
-        label = QLabel(self.trans["qty_label"])
-        spinbox = QDoubleSpinBox()
-        spinbox.setRange(0.001, 1000000.0)
-        spinbox.setValue(tab_data["qty"])
-        spinbox.setSingleStep(0.001)
-        spinbox.valueChanged.connect(lambda v: self.update_tab_qty(tab_data, v))
-        layout.addWidget(label)
-        layout.addWidget(spinbox)
-        tab_data["qty_label"] = label
-        tab_data["qty_spinbox"] = spinbox
-
-    def add_profit_percentage_ui(self, layout, tab_data):
-        label = QLabel(self.trans["profit_percentage_label"])
-        spinbox = QDoubleSpinBox()
-        spinbox.setRange(0.1, 10.0)
-        spinbox.setValue(tab_data["profit_percentage"])
-        spinbox.setSingleStep(0.1)
-        spinbox.valueChanged.connect(lambda v: self.update_tab_profit_percentage(tab_data, v))
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setRange(10, 1000)
-        slider.setValue(int(tab_data["profit_percentage"] * 100))
-        slider.setSingleStep(10)
-        slider.valueChanged.connect(lambda v: self.update_tab_profit_percentage_from_slider(tab_data, v))
-        layout.addWidget(label)
-        layout.addWidget(spinbox)
-        layout.addWidget(slider)
-        tab_data["profit_percentage_label"] = label
-        tab_data["profit_percentage_spinbox"] = spinbox
-        tab_data["profit_percentage_slider"] = slider
-
-    def add_auto_limit_ui(self, layout, tab_data):
-        label = QLabel(self.trans["auto_limit_label"])
-        checkbox = QCheckBox(self.trans["auto_limit_checkbox"])
-        checkbox.setChecked(tab_data["auto_limit"])
-        checkbox.stateChanged.connect(lambda s: self.update_tab_auto_limit(tab_data, s))
-        layout.addWidget(label)
-        layout.addWidget(checkbox)
-        tab_data["auto_limit_label"] = label
-        tab_data["auto_limit_checkbox"] = checkbox
-
-    def add_leverage_ui(self, layout, tab_data):
-        label = QLabel(self.trans["leverage_label"])
-        spinbox = QDoubleSpinBox()
-        spinbox.setRange(1.0, 100.0)
-        spinbox.setValue(tab_data["leverage"])
-        spinbox.setSingleStep(0.1)
-        spinbox.valueChanged.connect(lambda v: self.update_tab_leverage(tab_data, v))
-        layout.addWidget(label)
-        layout.addWidget(spinbox)
-        tab_data["leverage_label"] = label
-        tab_data["leverage_spinbox"] = spinbox
-
-    def add_stop_loss_ui(self, layout, tab_data):
-        enabled_label = QLabel(self.trans["stop_loss_enabled_label"])
-        enabled_checkbox = QCheckBox(self.trans["stop_loss_enabled_checkbox"])
-        enabled_checkbox.setChecked(tab_data["stop_loss_enabled"])
-        enabled_checkbox.stateChanged.connect(lambda s: self.update_tab_stop_loss_enabled(tab_data, s))
-        percentage_label = QLabel(self.trans["stop_loss_percentage_label"])
-        percentage_spinbox = QDoubleSpinBox()
-        percentage_spinbox.setRange(0.1, 10.0)
-        percentage_spinbox.setValue(tab_data["stop_loss_percentage"])
-        percentage_spinbox.setSingleStep(0.1)
-        percentage_spinbox.valueChanged.connect(lambda v: self.update_tab_stop_loss_percentage(tab_data, v))
-        layout.addWidget(enabled_label)
-        layout.addWidget(enabled_checkbox)
-        layout.addWidget(percentage_label)
-        layout.addWidget(percentage_spinbox)
-        tab_data["stop_loss_enabled_label"] = enabled_label
-        tab_data["stop_loss_enabled_checkbox"] = enabled_checkbox
-        tab_data["stop_loss_percentage_label"] = percentage_label
-        tab_data["stop_loss_percentage_spinbox"] = percentage_spinbox
-
-    def add_info_labels(self, layout, tab_data):
-        funding_info = QLabel(self.trans["funding_info_label"])
-        price = QLabel(self.trans["price_label"])
-        balance = QLabel(self.trans["balance_label"])
-        leveraged_balance = QLabel(self.trans["leveraged_balance_label"])
-        volume = QLabel(self.trans["volume_label"])
-        ping = QLabel(self.trans["ping_label"])
-        layout.addWidget(funding_info)
-        layout.addWidget(price)
-        layout.addWidget(balance)
-        layout.addWidget(leveraged_balance)
-        layout.addWidget(volume)
-        layout.addWidget(ping)
-        tab_data["funding_info_label"] = funding_info
-        tab_data["price_label"] = price
-        tab_data["balance_label"] = balance
-        tab_data["leveraged_balance_label"] = leveraged_balance
-        tab_data["volume_label"] = volume
-        tab_data["ping_label"] = ping
-
-    def add_buttons(self, layout, tab_data):
-        refresh = QPushButton(self.trans["refresh_button"])
-        refresh.clicked.connect(lambda: self.update_tab_funding_data(tab_data))
-        close_all = QPushButton(self.trans["close_all_trades_button"])
-        close_all.setStyleSheet("background-color: red; color: white; font-weight: bold;")
-        close_all.clicked.connect(lambda: self.handle_tab_close_all_trades(tab_data))
-        layout.addWidget(refresh)
-        layout.addWidget(close_all)
-        tab_data["refresh_button"] = refresh
-        tab_data["close_all_trades_button"] = close_all
-
-    def add_funding_web_view(self, layout, tab_data):
-        profile = QWebEngineProfile(f"BybitProfile_{self.tab_count}", self)
-        cache_path = os.path.join(os.getcwd(), "webcache", f"tab_{self.tab_count}")
-        os.makedirs(cache_path, exist_ok=True)
-        profile.setCachePath(cache_path)
-        profile.setPersistentStoragePath(cache_path)
-        profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
-        view = QWebEngineView()
-        page = QWebEnginePage(profile, view)
-        view.setPage(page)
-        view.setMinimumHeight(150)
-        tab_data["funding_web_view"] = view
-        tab_data["web_profile"] = profile
-        layout.addWidget(view)
-        self.update_tab_funding_web_view(tab_data)
-
-    def init_tab_timers(self, tab_data):
-        # Секундний таймер — відлік до фандингу та авто-сканування
+    def _init_tab_timers(self, tab_data):
         timer = QTimer()
-        timer.timeout.connect(lambda: self.check_tab_funding_time(tab_data))
+        timer.timeout.connect(lambda: self._check_funding_time(tab_data))
         timer.start(1000)
-        # Таймер оновлення фандинг-рейту — кожні 5 хвилин
-        funding_refresh_timer = QTimer()
-        funding_refresh_timer.timeout.connect(lambda: self.update_tab_funding_data(tab_data))
-        funding_refresh_timer.start(5 * 60 * 1000)
-        # Таймер пінгу
+
+        refresh_timer = QTimer()
+        refresh_timer.timeout.connect(lambda: self._update_tab_funding_data(tab_data))
+        refresh_timer.start(5 * 60 * 1000)
+
         ping_timer = QTimer()
-        ping_timer.timeout.connect(lambda: self.update_tab_ping(tab_data))
-        ping_timer.start(30000)
+        ping_timer.timeout.connect(lambda: self._update_ping(tab_data))
+        ping_timer.start(30_000)
+
         tab_data["timer"] = timer
-        tab_data["funding_refresh_timer"] = funding_refresh_timer
+        tab_data["funding_refresh_timer"] = refresh_timer
         tab_data["ping_timer"] = ping_timer
 
-    # Методи оновлення (групуємо)
-    def update_language(self, language_text):
-        self.language = "en" if language_text == "English" else "uk"
-        self.trans = translations[self.language]
-        self.setWindowTitle(self.trans["window_title"].format("Multi-Coin"))
-        self.language_label.setText(self.trans["language_label"])
-        for td in self.tab_data_list:
-            self.update_tab_labels(td)
-            self.update_tab_funding_data(td)
-        self.tab_widget.setTabText(self.tab_widget.count() - 2, "Statistics" if self.language == "en" else "Статистика")
-        self.save_settings()
+    # ------------------------------------------------------------------ #
+    #  Торгова логіка                                                     #
+    # ------------------------------------------------------------------ #
 
-    def update_tab_labels(self, tab_data):
-        tab_data["exchange_label"].setText(self.trans["exchange_label"])
-        tab_data["testnet_label"].setText(self.trans["testnet_label"])
-        tab_data["reverse_side_label"].setText(self.trans["reverse_side_label"])
-        tab_data["reverse_side_checkbox"].setText(self.trans["reverse_side_checkbox"])
-        tab_data["testnet_checkbox"].setText(self.trans["testnet_checkbox"])
-        tab_data["coin_input_label"].setText(self.trans["coin_input_label"])
-        tab_data["update_coin_button"].setText(self.trans["update_coin_button"])
-        tab_data["funding_interval_label"].setText(self.trans["funding_interval_label"])
-        tab_data["entry_time_label"].setText(self.trans["entry_time_label"])
-        tab_data["qty_label"].setText(self.trans["qty_label"])
-        tab_data["profit_percentage_label"].setText(self.trans["profit_percentage_label"])
-        tab_data["auto_limit_label"].setText(self.trans["auto_limit_label"])
-        tab_data["auto_limit_checkbox"].setText(self.trans["auto_limit_checkbox"])
-        tab_data["leverage_label"].setText(self.trans["leverage_label"])
-        tab_data["stop_loss_percentage_label"].setText(self.trans["stop_loss_percentage_label"])
-        tab_data["close_all_trades_button"].setText(self.trans["close_all_trades_button"])
-        tab_data["stop_loss_enabled_label"].setText(self.trans["stop_loss_enabled_label"])
-        tab_data["stop_loss_enabled_checkbox"].setText(self.trans["stop_loss_enabled_checkbox"])
-        t = self.trans
-        tab_data["auto_mode_title_label"].setText(t["auto_mode_title"])
-        tab_data["auto_mode_label_widget"].setText(t["auto_mode_label"])
-        tab_data["auto_threshold_label"].setText(t["auto_min_funding_label"])
-        tab_data["auto_results_label"].setText(t["auto_results_label"])
-        tab_data["auto_scan_btn"].setText(t["auto_scan_now_btn"])
-        tab_data["auto_scan_table"].setHorizontalHeaderLabels([t["auto_col_symbol"], t["auto_col_rate"], t["auto_col_time"], t["auto_col_select"]])
-        combo = tab_data["auto_mode_combo"]
-        combo.blockSignals(True)
-        current_idx = combo.currentIndex()
-        combo.clear()
-        combo.addItems([t["auto_mode_manual"], t["auto_mode_auto"]])
-        combo.setCurrentIndex(current_idx)
-        combo.blockSignals(False)
-        if not tab_data.get("auto_mode"):
-            tab_data["auto_status_label"].setText(t["auto_status_disabled"])
-            tab_data["auto_chosen_label"].setText(t["auto_chosen_none"])
+    def _check_funding_time(self, tab_data):
+        if tab_data not in self.tab_data_list or not tab_data["funding_data"]:
+            self._reset_tab_labels(tab_data)
+            return
+        # self._check_auto_scan_trigger(tab_data)
 
-    def update_tab_exchange(self, tab_data, exchange):
-        if tab_data not in self.tab_data_list: return
-        tab_data["exchange"] = exchange
-        self.update_tab_funding_web_view(tab_data)
-        tab_data["funding_interval_hours"] = 1.0 if exchange == "Bybit" else 8.0
-        tab_data["funding_interval_combobox"].blockSignals(True)
-        tab_data["funding_interval_combobox"].clear()
-        intervals = ["0.01", "1", "4", "8"] if exchange == "Bybit" else ["8"]
-        tab_data["funding_interval_combobox"].addItems(intervals)
-        formatted = str(float(tab_data["funding_interval_hours"])).rstrip(".0")
-        tab_data["funding_interval_combobox"].setCurrentText(formatted)
-        tab_data["funding_interval_combobox"].blockSignals(False)
-        tab_data["session"] = initialize_client(exchange, tab_data["testnet"])
-        self.save_settings()
-        self.update_tab_funding_data(tab_data)
+        symbol = tab_data["funding_data"]["symbol"]
+        rate   = tab_data["funding_data"]["funding_rate"]
+        time_val = tab_data["funding_data"]["funding_time"]
 
-    def update_tab_testnet(self, tab_data, state):
-        if tab_data not in self.tab_data_list: return
-        tab_data["testnet"] = state == Qt.CheckState.Checked.value
-        tab_data["session"] = initialize_client(tab_data["exchange"], tab_data["testnet"])
-        self.save_settings()
-        self.update_tab_funding_data(tab_data)
+        try:
+            time_to_funding, time_str = get_next_funding_time(time_val, tab_data["funding_interval_hours"])
+        except Exception as e:
+            print(f"Error calculating funding time: {e}")
+            return
 
-    def update_tab_symbol(self, tab_data, symbol):
-        if tab_data not in self.tab_data_list: return
-        tab_data["selected_symbol"] = symbol.strip().upper()
-        self.update_tab_funding_web_view(tab_data)
-        self.tab_widget.setTabText(self.tab_data_list.index(tab_data), f"{tab_data['selected_symbol']}")
-        self.save_settings()
-        self.update_tab_funding_data(tab_data)
+        tab_data["funding_info_label"].setText(
+            f"{self.trans['funding_info_label'].split(':')[0]}: {rate:.4f}% | "
+            f"{self.trans['funding_info_label'].split('|')[1].strip()}: {time_str}"
+        )
 
-    def update_tab_funding_interval(self, tab_data, value):
-        if tab_data not in self.tab_data_list or not value: return
-        tab_data["funding_interval_hours"] = float(value)
-        self.save_settings()
-        self.update_tab_funding_data(tab_data)
+        if 0.5 <= time_to_funding <= 1.5 and tab_data["pre_funding_price"] is None:
+            tab_data["pre_funding_price"] = get_current_price(
+                tab_data["session"], symbol, tab_data["exchange"]
+            )
 
-    def update_tab_entry_time(self, tab_data, value):
-        if tab_data not in self.tab_data_list: return
-        tab_data["entry_time_seconds"] = value
-        self.save_settings()
+        entry_window = tab_data["entry_time_seconds"]
+        if entry_window - 1.0 <= time_to_funding <= entry_window and not tab_data["open_order_id"]:
+            side = (
+                ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"]
+                else ("Buy" if rate > 0 else "Sell")
+            )
+            tab_data["open_order_id"] = place_market_order(
+                tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
+            )
+            if tab_data["open_order_id"]:
+                delay_ms = int((time_to_funding - 0.5) * 1000)
+                QTimer.singleShot(delay_ms, lambda: self._capture_funding_price(tab_data, symbol, side))
+            tab_data["pre_funding_price"] = None
 
-    def update_tab_qty(self, tab_data, value):
-        if tab_data not in self.tab_data_list: return
-        tab_data["qty"] = value
-        self.save_settings()
-        self.update_tab_volume_label(tab_data)
+        tab_data["update_count"] += 1
+        if tab_data.get("position_open") and tab_data["update_count"] % 10 == 0:
+            self._check_position_status(tab_data)
 
-    def update_tab_profit_percentage(self, tab_data, value):
-        if tab_data not in self.tab_data_list: return
-        tab_data["profit_percentage"] = value
-        tab_data["profit_percentage_slider"].setValue(int(value * 100))
-        self.save_settings()
+    def _check_position_status(self, tab_data):
+        try:
+            symbol = tab_data["selected_symbol"]
+            if tab_data["exchange"] == "Bybit":
+                pos = tab_data["session"].get_positions(category="linear", symbol=symbol)
+                if pos["retCode"] == 0:
+                    position = next(
+                        (p for p in pos["result"]["list"]
+                         if p["symbol"] == symbol and float(p["size"]) > 0),
+                        None,
+                    )
+            else:
+                pos = tab_data["session"].get_position_information(symbol=symbol)
+                position = next(
+                    (p for p in pos if p["symbol"] == symbol and abs(float(p["positionAmt"])) > 0),
+                    None,
+                )
+            if not position:
+                tab_data["position_open"] = False
+                self._update_stats_table()
+        except Exception as e:
+            print(f"Error checking position: {e}")
 
-    def update_tab_profit_percentage_from_slider(self, tab_data, value):
-        if tab_data not in self.tab_data_list: return
-        tab_data["profit_percentage"] = value / 100.0
-        tab_data["profit_percentage_spinbox"].setValue(tab_data["profit_percentage"])
-        self.save_settings()
+    def _capture_funding_price(self, tab_data, symbol, side):
+        if tab_data not in self.tab_data_list:
+            return
+        entry_price  = get_order_execution_price(tab_data["session"], symbol, tab_data["open_order_id"], tab_data["exchange"])
+        candle_price = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
+        pre_funding  = tab_data["pre_funding_price"]
 
-    def update_tab_auto_limit(self, tab_data, state):
-        if tab_data not in self.tab_data_list: return
-        tab_data["auto_limit"] = state == Qt.CheckState.Checked.value
-        self.save_settings()
+        if entry_price:
+            tab_data["position_open"] = True
 
-    def update_tab_leverage(self, tab_data, value):
-        if tab_data not in self.tab_data_list: return
-        tab_data["leverage"] = value
-        self.save_settings()
-        self.update_tab_leveraged_balance_label(tab_data)
+        prices = [p for p in [entry_price, candle_price, pre_funding] if p]
+        if not prices:
+            tab_data["open_order_id"] = None
+            return
 
-    def update_tab_stop_loss_percentage(self, tab_data, value):
-        if tab_data not in self.tab_data_list: return
-        tab_data["stop_loss_percentage"] = value
-        self.save_settings()
+        avg = sum(prices) / len(prices)
+        deviations = [abs(p - avg) / avg * 100 for p in prices]
+        if max(deviations) > 0.5:
+            valid = [p for i, p in enumerate(prices) if deviations[i] <= 0.5]
+            selected = sum(valid) / len(valid) if valid else candle_price or avg
+            print(
+                f"Price validation warning {symbol}: entry={entry_price}, "
+                f"candle={candle_price}, pre={pre_funding}. Using {selected}"
+            )
+        else:
+            selected = avg
 
-    def update_tab_stop_loss_enabled(self, tab_data, state):
-        if tab_data not in self.tab_data_list: return
-        tab_data["stop_loss_enabled"] = state == Qt.CheckState.Checked.value
-        self.save_settings()
+        tab_data["funding_time_price"] = selected
+        tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
+        target = selected * (
+            1 + tab_data["profit_percentage"] / 100 if side == "Buy"
+            else 1 - tab_data["profit_percentage"] / 100
+        )
 
-    def update_tab_volume_label(self, tab_data):
-        if tab_data not in self.tab_data_list: return
-        price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
+        if tab_data["auto_limit"]:
+            optimal = get_optimal_limit_price(
+                tab_data["session"], symbol, side, selected,
+                tab_data["exchange"], tab_data["profit_percentage"], tick_size,
+            )
+            if optimal:
+                actual_profit = abs((optimal - selected) / selected * 100)
+                limit_price = optimal if abs(actual_profit - tab_data["profit_percentage"]) <= 0.1 else target
+            else:
+                limit_price = target
+        else:
+            limit_price = target
+
+        decimal_places = 0
+        if tick_size:
+            decimal_places = abs(int(math.log10(tick_size)))
+            limit_price = round(limit_price, decimal_places)
+
+        tab_data["limit_price"] = limit_price
+        place_limit_close_order(
+            tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"]
+        )
+        tab_data["open_order_id"] = None
+
+        if tab_data["stop_loss_enabled"] and tab_data["stop_loss_percentage"] > 0:
+            stop_price = selected * (
+                1 - tab_data["stop_loss_percentage"] / 100 if side == "Buy"
+                else 1 + tab_data["stop_loss_percentage"] / 100
+            )
+            if tick_size:
+                stop_price = round(stop_price, decimal_places)
+            place_stop_loss_order(
+                tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"]
+            )
+
+        QTimer.singleShot(1000, lambda: self._log_limit_price_diff(tab_data, symbol))
+
+    def _log_limit_price_diff(self, tab_data, symbol):
+        if tab_data not in self.tab_data_list:
+            return
+        open_price = tab_data["funding_time_price"]
+        limit = tab_data.get("limit_price")
+        if open_price is None or limit is None:
+            return
+        profit = abs((limit - open_price) / open_price * 100)
+        if abs(profit - tab_data["profit_percentage"]) > 0.5:
+            QMessageBox.warning(
+                self,
+                self.trans["price_mismatch_warning_title"],
+                self.trans["price_mismatch_warning_text"].format(
+                    symbol=symbol,
+                    actual_profit=profit,
+                    expected_profit=tab_data["profit_percentage"],
+                ),
+            )
+
+    def _handle_close_all_trades(self, tab_data):
+        if tab_data not in self.tab_data_list:
+            return
+        msg = QMessageBox()
+        msg.setWindowTitle(self.trans["close_all_trades_warning_title"])
+        msg.setText(self.trans["close_all_trades_warning_text"])
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+        if self.language == "uk":
+            msg.button(QMessageBox.StandardButton.Yes).setText("Так")
+            msg.button(QMessageBox.StandardButton.No).setText("Ні")
+        if msg.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        success = close_all_positions(tab_data["session"], tab_data["exchange"], symbol=tab_data["selected_symbol"])
+        result = QMessageBox()
+        if success:
+            result.setWindowTitle("Успіх" if self.language == "uk" else "Success")
+            result.setText(self.trans["close_all_trades_success"])
+            tab_data["open_order_id"] = None
+        else:
+            result.setWindowTitle("Помилка" if self.language == "uk" else "Error")
+            result.setText(self.trans["close_all_trades_error"].format("No positions found or API error"))
+        result.exec()
+        self._update_tab_funding_data(tab_data)
+
+    # ------------------------------------------------------------------ #
+    #  Оновлення даних вкладки                                            #
+    # ------------------------------------------------------------------ #
+
+    def _update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2):
+        if tab_data not in self.tab_data_list:
+            return
+        for attempt in range(retry_count):
+            try:
+                tab_data["funding_data"] = get_funding_data(
+                    tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"]
+                )
+                price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
+                tab_data["price_label"].setText(
+                    f"{self.trans['price_label'].split(':')[0]}: ${price:.6f}" if price else self.trans["price_label"]
+                )
+                balance = get_account_balance(tab_data["session"], tab_data["exchange"])
+                tab_data["balance_label"].setText(
+                    f"{self.trans['balance_label'].split(':')[0]}: ${balance:.2f} USDT" if balance else self.trans["balance_label"]
+                )
+                self._update_leveraged_balance(tab_data)
+                if tab_data["funding_data"]:
+                    rate = tab_data["funding_data"]["funding_rate"]
+                    _, time_str = get_next_funding_time(tab_data["funding_data"]["funding_time"], tab_data["funding_interval_hours"])
+                    tab_data["funding_info_label"].setText(
+                        f"{self.trans['funding_info_label'].split(':')[0]}: {rate:.4f}% | "
+                        f"{self.trans['funding_info_label'].split('|')[1].strip()}: {time_str}"
+                    )
+                else:
+                    self._reset_tab_labels(tab_data)
+                self._update_volume_label(tab_data)
+                self._update_ping(tab_data)
+                self._refresh_web_view(tab_data)
+                return
+            except Exception as e:
+                print(f"Error updating funding data (attempt {attempt + 1}): {e}")
+                if attempt < retry_count - 1:
+                    time.sleep(retry_delay)
+        self._set_tab_labels_error(tab_data)
+
+    def _update_volume_label(self, tab_data):
+        if tab_data not in self.tab_data_list:
+            return
+        price   = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
         balance = get_account_balance(tab_data["session"], tab_data["exchange"])
         leveraged = balance * tab_data["leverage"] if balance and tab_data["leverage"] else None
         if price and tab_data["qty"]:
@@ -958,225 +1023,257 @@ class FundingTraderApp(QMainWindow):
             tab_data["volume_label"].setText(self.trans["volume_label"])
             tab_data["volume_label"].setStyleSheet("color: black;")
 
-    def update_tab_leveraged_balance_label(self, tab_data):
-        if tab_data not in self.tab_data_list: return
+    def _update_leveraged_balance(self, tab_data):
+        if tab_data not in self.tab_data_list:
+            return
         balance = get_account_balance(tab_data["session"], tab_data["exchange"])
         if balance and tab_data["leverage"]:
             leveraged = balance * tab_data["leverage"]
-            tab_data["leveraged_balance_label"].setText(f"{self.trans['leveraged_balance_label'].split(':')[0]}: ${leveraged:.2f} USDT")
+            tab_data["leveraged_balance_label"].setText(
+                f"{self.trans['leveraged_balance_label'].split(':')[0]}: ${leveraged:.2f} USDT"
+            )
         else:
             tab_data["leveraged_balance_label"].setText(self.trans["leveraged_balance_label"])
 
-    def update_tab_ping(self, tab_data):
-        if tab_data not in self.tab_data_list: return
+    def _update_ping(self, tab_data):
+        if tab_data not in self.tab_data_list:
+            return
         update_ping(tab_data["session"], tab_data["ping_label"], tab_data["exchange"])
 
-    def update_tab_funding_web_view(self, tab_data):
-        if tab_data not in self.tab_data_list: return
-        symbol = tab_data["selected_symbol"]
-        if tab_data["exchange"] == "Bybit":
-            url = f"https://www.bybit.com/trade/usdt/{symbol}"
-            tab_data["funding_web_view"].setUrl(QUrl(url))
-            tab_data["funding_web_view"].setVisible(True)
-        else:
-            tab_data["funding_web_view"].setVisible(False)
-
-    def update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2):
-        if tab_data not in self.tab_data_list: return
-        for attempt in range(retry_count):
-            try:
-                tab_data["funding_data"] = get_funding_data(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
-                price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
-                tab_data["price_label"].setText(f"{self.trans['price_label'].split(':')[0]}: ${price:.6f}" if price else self.trans["price_label"])
-                balance = get_account_balance(tab_data["session"], tab_data["exchange"])
-                tab_data["balance_label"].setText(f"{self.trans['balance_label'].split(':')[0]}: ${balance:.2f} USDT" if balance else self.trans["balance_label"])
-                self.update_tab_leveraged_balance_label(tab_data)
-                if tab_data["funding_data"]:
-                    rate = tab_data["funding_data"]["funding_rate"]
-                    time_val = tab_data["funding_data"]["funding_time"]
-                    _, time_str = get_next_funding_time(time_val, tab_data["funding_interval_hours"])
-                    tab_data["funding_info_label"].setText(f"{self.trans['funding_info_label'].split(':')[0]}: {rate:.4f}% | {self.trans['funding_info_label'].split('|')[1].strip()}: {time_str}")
-                else:
-                    self.reset_tab_labels_to_defaults(tab_data)
-                self.update_tab_volume_label(tab_data)
-                self.update_tab_ping(tab_data)
-                self.update_tab_funding_web_view(tab_data)
-                return
-            except Exception as e:
-                print(f"Error updating funding data (attempt {attempt + 1}): {e}")
-                if attempt < retry_count - 1:
-                    time.sleep(retry_delay)
-        self.reset_tab_labels_to_error(tab_data)
-
-    def reset_tab_labels_to_defaults(self, tab_data):
-        tab_data["funding_info_label"].setText(self.trans["funding_info_label"])
-        tab_data["price_label"].setText(self.trans["price_label"])
-        tab_data["balance_label"].setText(self.trans["balance_label"])
-        tab_data["leveraged_balance_label"].setText(self.trans["leveraged_balance_label"])
-        tab_data["volume_label"].setText(self.trans["volume_label"])
+    def _reset_tab_labels(self, tab_data):
+        t = self.trans
+        tab_data["funding_info_label"].setText(t["funding_info_label"])
+        tab_data["price_label"].setText(t["price_label"])
+        tab_data["balance_label"].setText(t["balance_label"])
+        tab_data["leveraged_balance_label"].setText(t["leveraged_balance_label"])
+        tab_data["volume_label"].setText(t["volume_label"])
         tab_data["volume_label"].setStyleSheet("color: black;")
-        tab_data["ping_label"].setText(self.trans["ping_label"])
+        tab_data["ping_label"].setText(t["ping_label"])
         tab_data["ping_label"].setStyleSheet("color: black;")
 
-    def reset_tab_labels_to_error(self, tab_data):
-        tab_data["funding_info_label"].setText(f"{self.trans['funding_info_label'].split(':')[0]}: Error | {self.trans['funding_info_label'].split('|')[1].strip()}: Error")
-        tab_data["price_label"].setText(f"{self.trans['price_label'].split(':')[0]}: Error")
-        tab_data["balance_label"].setText(f"{self.trans['balance_label'].split(':')[0]}: Error")
-        tab_data["leveraged_balance_label"].setText(f"{self.trans['leveraged_balance_label'].split(':')[0]}: Error")
-        tab_data["volume_label"].setText(f"{self.trans['volume_label'].split(':')[0]}: Error")
+    def _set_tab_labels_error(self, tab_data):
+        t = self.trans
+        def _err(key):
+            return f"{t[key].split(':')[0]}: Error"
+        tab_data["funding_info_label"].setText(
+            f"{t['funding_info_label'].split(':')[0]}: Error | {t['funding_info_label'].split('|')[1].strip()}: Error"
+        )
+        tab_data["price_label"].setText(_err("price_label"))
+        tab_data["balance_label"].setText(_err("balance_label"))
+        tab_data["leveraged_balance_label"].setText(_err("leveraged_balance_label"))
+        tab_data["volume_label"].setText(_err("volume_label"))
         tab_data["volume_label"].setStyleSheet("color: black;")
-        tab_data["ping_label"].setText(f"{self.trans['ping_label'].split(':')[0]}: Error")
+        tab_data["ping_label"].setText(_err("ping_label"))
         tab_data["ping_label"].setStyleSheet("color: red;")
 
-    def check_tab_funding_time(self, tab_data):
-        if tab_data not in self.tab_data_list or not tab_data["funding_data"]: 
-            self.reset_tab_labels_to_defaults(tab_data)
+    # ------------------------------------------------------------------ #
+    #  Обробники змін налаштувань                                         #
+    # ------------------------------------------------------------------ #
+
+    def _on_exchange_changed(self, tab_data, exchange):
+        if tab_data not in self.tab_data_list:
             return
-        # Авто-сканування: перевіряємо чи час запускати пошук монет
-        self.check_auto_scan_trigger(tab_data)
-        symbol = tab_data["funding_data"]["symbol"]
-        rate = tab_data["funding_data"]["funding_rate"]
-        time_val = tab_data["funding_data"]["funding_time"]
-        try:
-            time_to_funding, time_str = get_next_funding_time(time_val, tab_data["funding_interval_hours"])
-        except Exception as e:
-            print(f"Error calculating funding time: {e}")
+        tab_data["exchange"] = exchange
+        self._refresh_web_view(tab_data)
+        tab_data["funding_interval_hours"] = 1.0 if exchange == "Bybit" else 8.0
+        combo = tab_data["funding_interval_combobox"]
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(["0.01", "1", "4", "8"] if exchange == "Bybit" else ["8"])
+        combo.setCurrentText(str(float(tab_data["funding_interval_hours"])).rstrip(".0"))
+        combo.blockSignals(False)
+        tab_data["session"] = initialize_client(exchange, tab_data["testnet"])
+        self._save()
+        self._update_tab_funding_data(tab_data)
+
+    def _on_testnet_changed(self, tab_data, state):
+        if tab_data not in self.tab_data_list:
             return
-        tab_data["funding_info_label"].setText(f"{self.trans['funding_info_label'].split(':')[0]}: {rate:.4f}% | {self.trans['funding_info_label'].split('|')[1].strip()}: {time_str}")
+        tab_data["testnet"] = state == Qt.CheckState.Checked.value
+        tab_data["session"] = initialize_client(tab_data["exchange"], tab_data["testnet"])
+        self._save()
+        self._update_tab_funding_data(tab_data)
 
-        if 0.5 <= time_to_funding <= 1.5 and tab_data["pre_funding_price"] is None:
-            tab_data["pre_funding_price"] = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
-
-        if tab_data["entry_time_seconds"] - 1.0 <= time_to_funding <= tab_data["entry_time_seconds"] and not tab_data["open_order_id"]:
-            side = ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"] else ("Buy" if rate > 0 else "Sell")
-            tab_data["open_order_id"] = place_market_order(tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"])
-            if tab_data["open_order_id"]:
-                QTimer.singleShot(int((time_to_funding - 0.5) * 1000), lambda: self.capture_tab_funding_price(tab_data, symbol, side))
-            tab_data["pre_funding_price"] = None
-
-        tab_data["update_count"] += 1
-        if tab_data.get("position_open", False) and tab_data["update_count"] % 10 == 0:
-            self.check_position_status(tab_data)
-
-    def check_position_status(self, tab_data):
-        try:
-            symbol = tab_data["selected_symbol"]
-            if tab_data["exchange"] == "Bybit":
-                pos = tab_data["session"].get_positions(category="linear", symbol=symbol)
-                if pos["retCode"] == 0:
-                    position = next((p for p in pos["result"]["list"] if p["symbol"] == symbol and float(p["size"]) > 0), None)
-            else:
-                pos = tab_data["session"].get_position_information(symbol=symbol)
-                position = next((p for p in pos if p["symbol"] == symbol and abs(float(p["positionAmt"])) > 0), None)
-            if not position:
-                tab_data["position_open"] = False
-                self.update_stats_table()
-        except Exception as e:
-            print(f"Error checking position: {e}")
-
-    def capture_tab_funding_price(self, tab_data, symbol, side):
-        if tab_data not in self.tab_data_list: return
-        entry_price = get_order_execution_price(tab_data["session"], symbol, tab_data["open_order_id"], tab_data["exchange"])
-        if entry_price:
-            tab_data["position_open"] = True
-        candle_price = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
-        pre_funding = tab_data["pre_funding_price"]
-        prices = [p for p in [entry_price, candle_price, pre_funding] if p]
-        if not prices:
-            tab_data["open_order_id"] = None
+    def _on_symbol_changed(self, tab_data, symbol):
+        if tab_data not in self.tab_data_list:
             return
+        tab_data["selected_symbol"] = symbol.strip().upper()
+        self._refresh_web_view(tab_data)
+        self.tab_widget.setTabText(self.tab_data_list.index(tab_data), tab_data["selected_symbol"])
+        self._save()
+        self._update_tab_funding_data(tab_data)
 
-        avg_price = sum(prices) / len(prices)
-        max_diff = 0.5
-        deviations = [abs(p - avg_price) / avg_price * 100 for p in prices]
-        if max(deviations) > max_diff:
-            valid = [p for i, p in enumerate(prices) if deviations[i] <= max_diff]
-            selected = sum(valid) / len(valid) if valid else candle_price or avg_price
-            print(f"Price validation warning for {symbol}: Significant price discrepancy. Entry={entry_price or 0.0}, Candle={candle_price or 0.0}, Pre-funding={pre_funding or 0.0}. Using {selected}")
-        else:
-            selected = avg_price
+    def _on_funding_interval_changed(self, tab_data, value):
+        if tab_data not in self.tab_data_list or not value:
+            return
+        tab_data["funding_interval_hours"] = float(value)
+        self._save()
+        self._update_tab_funding_data(tab_data)
 
-        tab_data["funding_time_price"] = selected
-        tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
-        target_limit = selected * (1 + tab_data["profit_percentage"] / 100 if side == "Buy" else 1 - tab_data["profit_percentage"] / 100)
+    def _on_entry_time_changed(self, tab_data, value):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["entry_time_seconds"] = value
+        self._save()
 
-        if tab_data["auto_limit"]:
-            optimal = get_optimal_limit_price(tab_data["session"], symbol, side, selected, tab_data["exchange"], tab_data["profit_percentage"], tick_size)
-            if optimal:
-                actual_profit = abs((optimal - selected) / selected * 100)
-                if abs(actual_profit - tab_data["profit_percentage"]) > 0.1:
-                    limit_price = target_limit
-                else:
-                    limit_price = optimal
-            else:
-                limit_price = target_limit
-        else:
-            limit_price = target_limit
+    def _on_qty_changed(self, tab_data, value):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["qty"] = value
+        self._save()
+        self._update_volume_label(tab_data)
 
-        if tick_size:
-            decimal_places = abs(int(math.log10(tick_size)))
-            limit_price = round(limit_price, decimal_places)
-        tab_data["limit_price"] = limit_price
-        place_limit_close_order(tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"])
-        tab_data["open_order_id"] = None
+    def _on_profit_pct_changed(self, tab_data, value):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["profit_percentage"] = value
+        tab_data["profit_percentage_slider"].setValue(int(value * 100))
+        self._save()
 
-        if tab_data["stop_loss_enabled"] and tab_data["stop_loss_percentage"] > 0:
-            stop_price = selected * (1 - tab_data["stop_loss_percentage"] / 100 if side == "Buy" else 1 + tab_data["stop_loss_percentage"] / 100)
-            if tick_size:
-                stop_price = round(stop_price, decimal_places)
-            place_stop_loss_order(tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"])
+    def _on_profit_slider_changed(self, tab_data, value):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["profit_percentage"] = value / 100.0
+        tab_data["profit_percentage_spinbox"].setValue(tab_data["profit_percentage"])
+        self._save()
 
-        QTimer.singleShot(1000, lambda: self.log_limit_price_diff(tab_data, symbol, side))
+    def _on_auto_limit_changed(self, tab_data, state):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["auto_limit"] = state == Qt.CheckState.Checked.value
+        self._save()
 
-    def log_limit_price_diff(self, tab_data, symbol, side):
-        if tab_data not in self.tab_data_list: return
-        open_price = tab_data["funding_time_price"]
-        limit = tab_data.get("limit_price")
-        if open_price is None or limit is None: return
-        profit = abs((limit - open_price) / open_price * 100)
-        if abs(profit - tab_data["profit_percentage"]) > 0.5:
-            QMessageBox.warning(self, self.trans["price_mismatch_warning_title"], self.trans["price_mismatch_warning_text"].format(
-                symbol=symbol, actual_profit=profit, expected_profit=tab_data["profit_percentage"]
-            ))
+    def _on_leverage_changed(self, tab_data, value):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["leverage"] = value
+        self._save()
+        self._update_leveraged_balance(tab_data)
 
-    def handle_tab_close_all_trades(self, tab_data):
-        if tab_data not in self.tab_data_list: return
-        msg = QMessageBox()
-        msg.setWindowTitle(self.trans["close_all_trades_warning_title"])
-        msg.setText(self.trans["close_all_trades_warning_text"])
-        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        msg.setDefaultButton(QMessageBox.StandardButton.No)
-        if self.language == "uk":
-            msg.button(QMessageBox.StandardButton.Yes).setText("Так")
-            msg.button(QMessageBox.StandardButton.No).setText("Ні")
-        if msg.exec() == QMessageBox.StandardButton.Yes:
-            success = close_all_positions(tab_data["session"], tab_data["exchange"], symbol=tab_data["selected_symbol"])
-            result = QMessageBox()
-            result.setWindowTitle("Success" if self.language == "en" else "Успіх" if success else "Error" if self.language == "en" else "Помилка")
-            result.setText(self.trans["close_all_trades_success"] if success else self.trans["close_all_trades_error"].format("No positions found or API error"))
-            result.exec()
-            if success:
-                tab_data["open_order_id"] = None
-            self.update_tab_funding_data(tab_data)
+    def _on_stop_loss_pct_changed(self, tab_data, value):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["stop_loss_percentage"] = value
+        self._save()
+
+    def _on_stop_loss_enabled_changed(self, tab_data, state):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["stop_loss_enabled"] = state == Qt.CheckState.Checked.value
+        self._save()
+
+    def _on_reverse_side_changed(self, tab_data, state):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["reverse_side"] = state == Qt.CheckState.Checked.value
+        self._save()
+
+    # ------------------------------------------------------------------ #
+    #  Локалізація                                                        #
+    # ------------------------------------------------------------------ #
+
+    def _on_language_changed(self, language_text):
+        self.language = "en" if language_text == "English" else "uk"
+        self.trans = translations[self.language]
+        self.setWindowTitle(self.trans["window_title"].format("Multi-Coin"))
+        self.language_label.setText(self.trans["language_label"])
+        for td in self.tab_data_list:
+            self._update_tab_labels(td)
+            self._update_tab_funding_data(td)
+        self.tab_widget.setTabText(
+            self.tab_widget.count() - 2,
+            "Statistics" if self.language == "en" else "Статистика",
+        )
+        self._save()
+
+    def _update_tab_labels(self, tab_data):
+        t = self.trans
+        mappings = {
+            "exchange_label":            t["exchange_label"],
+            "testnet_label":             t["testnet_label"],
+            "reverse_side_label":        t["reverse_side_label"],
+            "coin_input_label":          t["coin_input_label"],
+            "funding_interval_label":    t["funding_interval_label"],
+            "entry_time_label":          t["entry_time_label"],
+            "qty_label":                 t["qty_label"],
+            "profit_percentage_label":   t["profit_percentage_label"],
+            "auto_limit_label":          t["auto_limit_label"],
+            "leverage_label":            t["leverage_label"],
+            "stop_loss_percentage_label":t["stop_loss_percentage_label"],
+            "stop_loss_enabled_label":   t["stop_loss_enabled_label"],
+            "auto_mode_title_label":     t["auto_mode_title"],
+            "auto_mode_label_widget":    t["auto_mode_label"],
+            "auto_threshold_label":      t["auto_min_funding_label"],
+            "auto_results_label":        t["auto_results_label"],
+        }
+        for key, text in mappings.items():
+            if key in tab_data:
+                tab_data[key].setText(text)
+
+        checkboxes = {
+            "testnet_checkbox":           t["testnet_checkbox"],
+            "reverse_side_checkbox":      t["reverse_side_checkbox"],
+            "auto_limit_checkbox":        t["auto_limit_checkbox"],
+            "stop_loss_enabled_checkbox": t["stop_loss_enabled_checkbox"],
+        }
+        for key, text in checkboxes.items():
+            if key in tab_data:
+                tab_data[key].setText(text)
+
+        buttons = {
+            "update_coin_button":         t["update_coin_button"],
+            "close_all_trades_button":    t["close_all_trades_button"],
+            "auto_scan_btn":              t["auto_scan_now_btn"],
+        }
+        for key, text in buttons.items():
+            if key in tab_data:
+                tab_data[key].setText(text)
+
+        # Таблиця авто-сканування
+        tab_data["auto_scan_table"].setHorizontalHeaderLabels([
+            t["auto_col_symbol"], t["auto_col_rate"], t["auto_col_time"], t["auto_col_select"]
+        ])
+
+        # Комбо-бокс режиму
+        combo = tab_data["auto_mode_combo"]
+        combo.blockSignals(True)
+        idx = combo.currentIndex()
+        combo.clear()
+        combo.addItems([t["auto_mode_manual"], t["auto_mode_auto"]])
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+        if not tab_data.get("auto_mode"):
+            tab_data["auto_status_label"].setText(t["auto_status_disabled"])
+            tab_data["auto_chosen_label"].setText(t["auto_chosen_none"])
+
+    # ------------------------------------------------------------------ #
+    #  Управління вкладками                                               #
+    # ------------------------------------------------------------------ #
 
     def close_tab(self, index):
-        # Ігноруємо вкладки поза tab_data_list (Statistics, "+" тощо)
         if index >= len(self.tab_data_list):
             return
         if self.tab_widget.count() <= 1:
             return
-        tab_data = self.tab_data_list[index]
-        tab_data["timer"].stop()
-        tab_data["funding_refresh_timer"].stop()
-        tab_data["ping_timer"].stop()
+        td = self.tab_data_list[index]
+        for timer_key in ("timer", "funding_refresh_timer", "ping_timer"):
+            td[timer_key].stop()
         self.tab_widget.removeTab(index)
         self.tab_data_list.pop(index)
-        self.save_settings()
+        self._save()
 
     def closeEvent(self, event):
+        self._global_scan_timer.stop()  
         for td in self.tab_data_list:
-            td["timer"].stop()
-            td["funding_refresh_timer"].stop()
-            td["ping_timer"].stop()
-        self.save_settings()
+            for timer_key in ("timer", "funding_refresh_timer", "ping_timer"):
+                td[timer_key].stop()
+        self._save()
         event.accept()
+
+    # ------------------------------------------------------------------ #
+    #  Хелпер збереження                                                  #
+    # ------------------------------------------------------------------ #
+
+    def _save(self):
+        sm.save_settings(self.tab_data_list, self.language, self.settings_path)
