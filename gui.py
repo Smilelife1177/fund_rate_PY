@@ -72,6 +72,16 @@ class FundingTraderApp(QMainWindow):
         self.tab_data_list: list[dict] = []
         self.tab_count = 0
 
+        # Додати поля для глобального авто-сканера
+        self._auto_scan_results: list = []
+        self._auto_scan_near_now: list = []
+        self._auto_scan_done_this_minute: bool = False
+
+        # Один глобальний таймер сканування
+        self._global_scan_timer = QTimer()
+        self._global_scan_timer.timeout.connect(self._global_auto_scan_tick)
+        self._global_scan_timer.start(1000)
+
         loaded = sm.load_settings(self.settings_path)
         initial = loaded[0] if loaded else {}
         self.add_new_tab(session=session, testnet=testnet, exchange=exchange, settings=initial)
@@ -465,6 +475,74 @@ class FundingTraderApp(QMainWindow):
 
     # ---- Авто-сканування UI ------------------------------------------- #
 
+    def _global_auto_scan_tick(self):
+        """Один глобальний тік — замість N тіків по вкладках."""
+        now = datetime.now(timezone.utc)
+        secs_into_hour = now.minute * 60 + now.second
+        secs_left = 3600 - secs_into_hour
+
+        if secs_left > 60:
+            self._auto_scan_done_this_minute = False
+            return
+
+        if self._auto_scan_done_this_minute:
+            return
+
+        # Перевіряємо, чи є хоча б одна вкладка з auto_mode=True
+        auto_tabs = [td for td in self.tab_data_list if td.get("auto_mode")]
+        if not auto_tabs:
+            return
+
+        self._auto_scan_done_this_minute = True
+
+        # Один спільний скан для всіх
+        threshold = min(td.get("auto_min_funding", 0.05) for td in auto_tabs)
+        try:
+            all_above, near_now = scan_funding_opportunities(threshold)
+            self._auto_scan_results = all_above
+            self._auto_scan_near_now = near_now
+        except Exception as e:
+            print(f"Global auto scan error: {e}")
+            return
+
+        # Роздаємо результати кожній вкладці з auto_mode=True
+        used_symbols = set()
+        for td in auto_tabs:
+            self._apply_scan_result_to_tab(td, all_above, near_now, used_symbols)
+#
+    def _apply_scan_result_to_tab(self, tab_data, all_above, near_now, used_symbols: set):
+        """Призначає найкращий вільний символ вкладці."""
+        t = self.trans
+        tab_data["auto_scan_results"] = all_above
+        self._update_auto_scan_table(tab_data)
+
+        # Фільтруємо вже зайняті символи
+        available = [s for s in near_now if s["symbol"] not in used_symbols]
+
+        if available:
+            best = available[0]
+            used_symbols.add(best["symbol"])
+            tab_data["auto_selected_symbol"] = best["symbol"]
+            tab_data["selected_symbol"] = best["symbol"]
+            tab_data["coin_input"].setText(best["symbol"])
+            self._refresh_web_view(tab_data)
+            self.tab_widget.setTabText(self.tab_data_list.index(tab_data), best["symbol"])
+            self._save()
+            self._update_tab_funding_data(tab_data)
+            tab_data["auto_chosen_label"].setText(
+                t["auto_chosen_selected"].format(symbol=best["symbol"], rate=best["rate"])
+            )
+            tab_data["auto_status_label"].setText(
+                t["auto_status_found"].format(n=len(all_above), symbol=best["symbol"])
+            )
+        elif all_above:
+            tab_data["auto_chosen_label"].setText(t["auto_chosen_waiting"].format(n=len(all_above)))
+            tab_data["auto_status_label"].setText(t["auto_status_watching"].format(n=len(all_above)))
+        else:
+            tab_data["auto_chosen_label"].setText(t["auto_chosen_not_found"])
+            tab_data["auto_status_label"].setText(t["auto_status_none"])
+
+
     def _add_auto_scan_ui(self, layout, tab_data):
         t = self.trans
 
@@ -675,7 +753,7 @@ class FundingTraderApp(QMainWindow):
         if tab_data not in self.tab_data_list or not tab_data["funding_data"]:
             self._reset_tab_labels(tab_data)
             return
-        self._check_auto_scan_trigger(tab_data)
+        # self._check_auto_scan_trigger(tab_data)
 
         symbol = tab_data["funding_data"]["symbol"]
         rate   = tab_data["funding_data"]["funding_rate"]
@@ -1150,6 +1228,7 @@ class FundingTraderApp(QMainWindow):
         self._save()
 
     def closeEvent(self, event):
+        self._global_scan_timer.stop()  
         for td in self.tab_data_list:
             for timer_key in ("timer", "funding_refresh_timer", "ping_timer"):
                 td[timer_key].stop()
