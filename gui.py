@@ -676,21 +676,43 @@ class FundingTraderApp(QMainWindow):
             self._update_auto_scan_table(tab_data)
 
             t = self.trans
-            # Визначаємо найкращу монету — near_now має пріоритет, інакше перша з all_above
             best = near_now[0] if near_now else (all_above[0] if all_above else None)
 
             if best:
                 symbol = best["symbol"]
                 tab_data["auto_selected_symbol"] = symbol
                 tab_data["selected_symbol"] = symbol
-                tab_data["coin_input"].setText(symbol)        # ← підставляємо в поле
+                tab_data["coin_input"].setText(symbol)
                 self._refresh_web_view(tab_data)
                 self.tab_widget.setTabText(self.tab_data_list.index(tab_data), symbol)
+
+                # ── Розрахунок profit percentage ──────────────────────────────
+                funding_rate = abs(best["rate"])
+                calculated_profit = round(funding_rate + 0.3, 4)
+                tab_data["profit_percentage"] = calculated_profit
+                tab_data["profit_percentage_spinbox"].setValue(calculated_profit)
+                tab_data["profit_percentage_slider"].setValue(int(calculated_profit * 100))
+
+                # ── Розрахунок qty ────────────────────────────────────────────
+                try:
+                    balance = get_account_balance(tab_data["session"], tab_data["exchange"])
+                    price   = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
+                    if balance and price and price > 0:
+                        usdt_to_use = balance * 0.30
+                        leveraged   = usdt_to_use * 10
+                        qty         = round(leveraged / price, 3)
+                        tab_data["qty"] = qty
+                        tab_data["qty_spinbox"].setValue(qty)
+                except Exception as e:
+                    print(f"Qty calc error: {e}")
+
                 self._save()
                 self._update_tab_funding_data(tab_data)
+
                 tab_data["auto_chosen_label"].setText(
                     t["auto_chosen_selected"].format(symbol=symbol, rate=best["rate"])
                 )
+                tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #1a6e1a;")
                 tab_data["auto_status_label"].setText(
                     t["auto_status_found"].format(n=len(all_above), symbol=symbol)
                 )
