@@ -507,40 +507,78 @@ class FundingTraderApp(QMainWindow):
 
         # Роздаємо результати кожній вкладці з auto_mode=True
         used_symbols = set()
+        # for td in auto_tabs:
+        #     self._apply_scan_result_to_tab(td, all_above, near_now, used_symbols)
+        # СТАЛО:
+        self._spawn_tabs_from_scan(near_now)
+
+        # Оновити статус у всіх авто-вкладках
         for td in auto_tabs:
-            self._apply_scan_result_to_tab(td, all_above, near_now, used_symbols)
-#
-    def _apply_scan_result_to_tab(self, tab_data, all_above, near_now, used_symbols: set):
-        """Призначає найкращий вільний символ вкладці."""
-        t = self.trans
-        tab_data["auto_scan_results"] = all_above
-        self._update_auto_scan_table(tab_data)
+            td["auto_scan_results"] = all_above
+            self._update_auto_scan_table(td)
+            if near_now:
+                td["auto_status_label"].setText(
+                    self.trans["auto_status_found"].format(n=len(all_above), symbol=near_now[0]["symbol"])
+                )
+            elif all_above:
+                td["auto_status_label"].setText(
+                    self.trans["auto_status_watching"].format(n=len(all_above))
+                )
+            else:
+                td["auto_status_label"].setText(self.trans["auto_status_none"])
+    #
 
-        # Фільтруємо вже зайняті символи
-        available = [s for s in near_now if s["symbol"] not in used_symbols]
+    def _spawn_tabs_from_scan(self, near_now: list):
+        """Створює нові вкладки під кожну знайдену монету (якщо вкладки ще немає)."""
+        # Збираємо символи що вже відкриті
+        existing_symbols = {td["selected_symbol"] for td in self.tab_data_list}
+        created = 0
+        MAX_AUTO_TABS = 5
 
-        if available:
-            best = available[0]
-            used_symbols.add(best["symbol"])
-            tab_data["auto_selected_symbol"] = best["symbol"]
-            tab_data["selected_symbol"] = best["symbol"]
-            tab_data["coin_input"].setText(best["symbol"])
-            self._refresh_web_view(tab_data)
-            self.tab_widget.setTabText(self.tab_data_list.index(tab_data), best["symbol"])
-            self._save()
-            self._update_tab_funding_data(tab_data)
-            tab_data["auto_chosen_label"].setText(
-                t["auto_chosen_selected"].format(symbol=best["symbol"], rate=best["rate"])
+        for coin in near_now:
+            if created >= MAX_AUTO_TABS:
+                break
+            symbol = coin["symbol"]
+            if symbol in existing_symbols:
+                continue  # вкладка вже є — не дублюємо
+
+            # Беремо налаштування з першої вкладки як шаблон
+            template = self.tab_data_list[0] if self.tab_data_list else {}
+            new_settings = {
+                "exchange":               template.get("exchange", "Bybit"),
+                "testnet":                template.get("testnet", False),
+                "selected_symbol":        symbol,
+                "funding_interval_hours": template.get("funding_interval_hours", 8),
+                "entry_time_seconds":     template.get("entry_time_seconds", 5),
+                "qty":                    template.get("qty", 1.0),
+                "profit_percentage":      template.get("profit_percentage", 1.0),
+                "auto_limit":             template.get("auto_limit", False),
+                "leverage":               template.get("leverage", 1.0),
+                "stop_loss_percentage":   template.get("stop_loss_percentage", 1.0),
+                "stop_loss_enabled":      template.get("stop_loss_enabled", False),
+                "reverse_side":           template.get("reverse_side", False),
+                "auto_mode":              False,  # нові вкладки — ручний режим
+                "auto_min_funding":       template.get("auto_min_funding", 0.05),
+            }
+
+            session = template.get("session") if template else None
+            testnet = new_settings["testnet"]
+            exchange = new_settings["exchange"]
+
+            new_td = self.add_new_tab(
+                session=session,
+                testnet=testnet,
+                exchange=exchange,
+                settings=new_settings,
             )
-            tab_data["auto_status_label"].setText(
-                t["auto_status_found"].format(n=len(all_above), symbol=best["symbol"])
-            )
-        elif all_above:
-            tab_data["auto_chosen_label"].setText(t["auto_chosen_waiting"].format(n=len(all_above)))
-            tab_data["auto_status_label"].setText(t["auto_status_watching"].format(n=len(all_above)))
-        else:
-            tab_data["auto_chosen_label"].setText(t["auto_chosen_not_found"])
-            tab_data["auto_status_label"].setText(t["auto_status_none"])
+            # Явно виставляємо символ після створення вкладки
+            new_td["selected_symbol"] = symbol
+            new_td["coin_input"].setText(symbol)
+            self._refresh_web_view(new_td)
+            self.tab_widget.setTabText(self.tab_data_list.index(new_td), symbol)
+
+            existing_symbols.add(symbol)
+            created += 1
 
 
     def _add_auto_scan_ui(self, layout, tab_data):
@@ -638,33 +676,31 @@ class FundingTraderApp(QMainWindow):
             self._update_auto_scan_table(tab_data)
 
             t = self.trans
-            if near_now:
-                best = near_now[0]
-                tab_data["auto_selected_symbol"] = best["symbol"]
-                tab_data["auto_chosen_label"].setText(
-                    t["auto_chosen_selected"].format(symbol=best["symbol"], rate=best["rate"])
-                )
-                tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #1a6e1a;")
-                tab_data["selected_symbol"] = best["symbol"]
-                tab_data["coin_input"].setText(best["symbol"])
+            # Визначаємо найкращу монету — near_now має пріоритет, інакше перша з all_above
+            best = near_now[0] if near_now else (all_above[0] if all_above else None)
+
+            if best:
+                symbol = best["symbol"]
+                tab_data["auto_selected_symbol"] = symbol
+                tab_data["selected_symbol"] = symbol
+                tab_data["coin_input"].setText(symbol)        # ← підставляємо в поле
                 self._refresh_web_view(tab_data)
-                self.tab_widget.setTabText(self.tab_data_list.index(tab_data), best["symbol"])
+                self.tab_widget.setTabText(self.tab_data_list.index(tab_data), symbol)
                 self._save()
                 self._update_tab_funding_data(tab_data)
+                tab_data["auto_chosen_label"].setText(
+                    t["auto_chosen_selected"].format(symbol=symbol, rate=best["rate"])
+                )
                 tab_data["auto_status_label"].setText(
-                    t["auto_status_found"].format(n=len(all_above), symbol=best["symbol"])
+                    t["auto_status_found"].format(n=len(all_above), symbol=symbol)
                 )
                 tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-weight: bold;")
-            elif all_above:
-                tab_data["auto_chosen_label"].setText(t["auto_chosen_waiting"].format(n=len(all_above)))
-                tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #555;")
-                tab_data["auto_status_label"].setText(t["auto_status_watching"].format(n=len(all_above)))
-                tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
             else:
                 tab_data["auto_chosen_label"].setText(t["auto_chosen_not_found"])
                 tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #b00;")
                 tab_data["auto_status_label"].setText(t["auto_status_none"])
                 tab_data["auto_status_label"].setStyleSheet("color: #b00; font-style: italic;")
+
         except Exception as e:
             print(f"Auto scan error: {e}")
             tab_data["auto_status_label"].setText(self.trans["auto_error"].format(e=e))
