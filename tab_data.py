@@ -29,6 +29,9 @@ DEFAULT_TAB_STATE = {
     "auto_scan_done_this_minute": False,
     "auto_scan_results": [],
     "auto_selected_symbol": None,
+    "auto_profit_addon": 0.3,
+    "auto_balance_pct": 30.0,
+    "auto_leverage_calc": 10.0,
 }
 
 

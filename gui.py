@@ -652,7 +652,62 @@ class FundingTraderApp(QMainWindow):
         scan_btn.clicked.connect(lambda: self._run_auto_scan(tab_data))
         layout.addWidget(scan_btn)
         tab_data["auto_scan_btn"] = scan_btn
+#
 
+        # ── Налаштування авто-розрахунку ──────────────────────────────
+        calc_group_label = QLabel("── Авто-розрахунок ──")
+        calc_group_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        layout.addWidget(calc_group_label)
+
+        # Profit addon
+        profit_addon_row = QHBoxLayout()
+        profit_addon_label = QLabel("+% до фандингу:")
+        profit_addon_spin = QDoubleSpinBox()
+        profit_addon_spin.setRange(0.0, 5.0)
+        profit_addon_spin.setSingleStep(0.05)
+        profit_addon_spin.setDecimals(2)
+        profit_addon_spin.setValue(tab_data.get("auto_profit_addon", 0.3))
+        profit_addon_spin.valueChanged.connect(
+            lambda v: (tab_data.update({"auto_profit_addon": v}), self._save())
+        )
+        profit_addon_row.addWidget(profit_addon_label)
+        profit_addon_row.addWidget(profit_addon_spin)
+        layout.addLayout(profit_addon_row)
+        tab_data["auto_profit_addon_spin"] = profit_addon_spin
+
+        # Balance %
+        balance_pct_row = QHBoxLayout()
+        balance_pct_label = QLabel("% від балансу:")
+        balance_pct_spin = QDoubleSpinBox()
+        balance_pct_spin.setRange(1.0, 100.0)
+        balance_pct_spin.setSingleStep(5.0)
+        balance_pct_spin.setDecimals(1)
+        balance_pct_spin.setValue(tab_data.get("auto_balance_pct", 30.0))
+        balance_pct_spin.valueChanged.connect(
+            lambda v: (tab_data.update({"auto_balance_pct": v}), self._save())
+        )
+        balance_pct_row.addWidget(balance_pct_label)
+        balance_pct_row.addWidget(balance_pct_spin)
+        layout.addLayout(balance_pct_row)
+        tab_data["auto_balance_pct_spin"] = balance_pct_spin
+
+        # Leverage для розрахунку qty
+        leverage_calc_row = QHBoxLayout()
+        leverage_calc_label = QLabel("Плече для qty:")
+        leverage_calc_spin = QDoubleSpinBox()
+        leverage_calc_spin.setRange(1.0, 100.0)
+        leverage_calc_spin.setSingleStep(1.0)
+        leverage_calc_spin.setDecimals(1)
+        leverage_calc_spin.setValue(tab_data.get("auto_leverage_calc", 10.0))
+        leverage_calc_spin.valueChanged.connect(
+            lambda v: (tab_data.update({"auto_leverage_calc": v}), self._save())
+        )
+        leverage_calc_row.addWidget(leverage_calc_label)
+        leverage_calc_row.addWidget(leverage_calc_spin)
+        layout.addLayout(leverage_calc_row)
+        tab_data["auto_leverage_calc_spin"] = leverage_calc_spin
+
+#
         layout.addStretch()
 
     def _set_auto_mode(self, tab_data, enabled: bool):
@@ -688,7 +743,9 @@ class FundingTraderApp(QMainWindow):
 
                 # ── Розрахунок profit percentage ──────────────────────────────
                 funding_rate = abs(best["rate"])
-                calculated_profit = round(funding_rate + 0.3, 4)
+                profit_addon = tab_data.get("auto_profit_addon", 0.3)
+                calculated_profit = round(funding_rate + profit_addon, 4)
+                # calculated_profit = round(funding_rate + 0.3, 4)
                 tab_data["profit_percentage"] = calculated_profit
                 tab_data["profit_percentage_spinbox"].setValue(calculated_profit)
                 tab_data["profit_percentage_slider"].setValue(int(calculated_profit * 100))
@@ -698,8 +755,12 @@ class FundingTraderApp(QMainWindow):
                     balance = get_account_balance(tab_data["session"], tab_data["exchange"])
                     price   = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
                     if balance and price and price > 0:
-                        usdt_to_use = balance * 0.30
-                        leveraged   = usdt_to_use * 10
+                        balance_pct    = tab_data.get("auto_balance_pct", 30.0) / 100
+                        leverage_calc  = tab_data.get("auto_leverage_calc", 10.0)
+                        usdt_to_use    = balance * balance_pct
+                        leveraged      = usdt_to_use * leverage_calc
+                        # usdt_to_use = balance * 0.30
+                        # leveraged   = usdt_to_use * 10
                         qty         = round(leveraged / price, 3)
                         tab_data["qty"] = qty
                         tab_data["qty_spinbox"].setValue(qty)
