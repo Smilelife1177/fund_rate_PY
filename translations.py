@@ -11,7 +11,7 @@ translations = {
         "testnet_checkbox": "Enable Testnet",
         "coin_input_label": "Enter Coin (e.g., BTCUSDT):",
         "update_coin_button": "Update Coin",
-        "funding_interval_label": "Funding Interval (hours):",
+        "funding_interval_label": "###Funding Interval (hours)###:",
         "entry_time_label": "Entry Time Before Funding (seconds):",
         "qty_label": "Order Quantity (qty):",
         "profit_percentage_label": "Desired Profit Percentage (%):",

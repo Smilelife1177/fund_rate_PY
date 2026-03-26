@@ -33,6 +33,7 @@ from logic import (
     place_limit_close_order, update_ping, initialize_client,
     close_all_positions, get_optimal_limit_price, get_candle_open_price,
     place_stop_loss_order, get_order_execution_price,
+    set_leverage,
 )
 from translations import translations
 import settings_manager as sm
@@ -1232,6 +1233,16 @@ class FundingTraderApp(QMainWindow):
         tab_data["leverage"] = value
         self._save()
         self._update_leveraged_balance(tab_data)
+
+        # ── Встановлюємо плече на біржі ──────────────────────────────
+        symbol = tab_data.get("selected_symbol")
+        if symbol and tab_data.get("session"):
+            ok = set_leverage(tab_data["session"], symbol, value, tab_data["exchange"])
+            if not ok:
+                # Показуємо помилку в статус-лейблі якщо є
+                if "ping_label" in tab_data:
+                    tab_data["ping_label"].setText("Leverage: Error")
+                    tab_data["ping_label"].setStyleSheet("color: red;")
 
     def _on_stop_loss_pct_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:

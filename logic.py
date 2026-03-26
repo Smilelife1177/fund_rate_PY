@@ -426,6 +426,32 @@ def close_all_positions(session, exchange, symbol=None):
         print(f"Error closing positions: {e}")
         return False
 
+
+def set_leverage(session, symbol, leverage, exchange):
+    try:
+        lev = int(leverage)
+        if exchange == "Bybit":
+            response = session.set_leverage(
+                category="linear",
+                symbol=symbol,
+                buyLeverage=str(lev),
+                sellLeverage=str(lev),
+            )
+            if response["retCode"] == 0:
+                print(f"Leverage set to {lev}x for {symbol}")
+                return True
+            else:
+                print(f"Error setting leverage: {response['retMsg']}")
+                return False
+        else:  # Binance
+            response = session.futures_change_leverage(symbol=symbol, leverage=lev)
+            print(f"Leverage set to {lev}x for {symbol}")
+            return True
+    except Exception as e:
+        print(f"Error setting leverage: {e}")
+        return False
+
+
 def update_ping(session, ping_label, exchange):
     try:
         print(f"Pinging {exchange} server...")
