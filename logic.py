@@ -227,18 +227,25 @@ def get_optimal_limit_price(session, symbol, side, current_price, exchange, prof
     except Exception as e:
         print(f"Error fetching optimal limit price: {e}")
         return None
-
+#
 def get_next_funding_time(funding_time, funding_interval_hours):
     funding_dt = datetime.fromtimestamp(funding_time, tz=timezone.utc)
     current_time = datetime.now(timezone.utc)
-    hours_since_last = (current_time - funding_dt).total_seconds() / 3600
-    intervals_passed = int(hours_since_last / funding_interval_hours) + 1
-    next_funding = funding_dt + timedelta(hours=intervals_passed * funding_interval_hours)
+
+    # Якщо час з API вже в майбутньому — це і є наступний фандинг
+    if funding_dt > current_time:
+        next_funding = funding_dt
+    else:
+        # Час в минулому — рахуємо наступний через інтервал
+        hours_since_last = (current_time - funding_dt).total_seconds() / 3600
+        intervals_passed = int(hours_since_last / funding_interval_hours) + 1
+        next_funding = funding_dt + timedelta(hours=intervals_passed * funding_interval_hours)
+
     time_diff = next_funding - current_time
     hours, remainder = divmod(int(time_diff.total_seconds()), 3600)
     minutes, seconds = divmod(remainder, 60)
     return time_diff.total_seconds(), f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
+#
 def place_market_order(session, symbol, side, qty, exchange):
     try:
         print(f"Placing market {side} order for {symbol} with quantity {qty}...")
