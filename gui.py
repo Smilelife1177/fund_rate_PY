@@ -656,13 +656,13 @@ class FundingTraderApp(QMainWindow):
 #
 
         # ── Налаштування авто-розрахунку ──────────────────────────────
-        calc_group_label = QLabel("── Авто-розрахунок ──")
+        calc_group_label = QLabel(t["auto_calc_group_label"])
         calc_group_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
         layout.addWidget(calc_group_label)
 
         # Profit addon
         profit_addon_row = QHBoxLayout()
-        profit_addon_label = QLabel("+% до фандингу:")
+        profit_addon_label = QLabel(t["auto_profit_addon_label"])
         profit_addon_spin = QDoubleSpinBox()
         profit_addon_spin.setRange(0.0, 5.0)
         profit_addon_spin.setSingleStep(0.05)
@@ -678,7 +678,7 @@ class FundingTraderApp(QMainWindow):
 
         # Balance %
         balance_pct_row = QHBoxLayout()
-        balance_pct_label = QLabel("% від балансу:")
+        balance_pct_label = QLabel(t["auto_balance_pct_label"])
         balance_pct_spin = QDoubleSpinBox()
         balance_pct_spin.setRange(1.0, 100.0)
         balance_pct_spin.setSingleStep(5.0)
@@ -691,6 +691,11 @@ class FundingTraderApp(QMainWindow):
         balance_pct_row.addWidget(balance_pct_spin)
         layout.addLayout(balance_pct_row)
         tab_data["auto_balance_pct_spin"] = balance_pct_spin
+
+
+        tab_data["auto_calc_group_label"]   = calc_group_label
+        tab_data["auto_profit_addon_label"] = profit_addon_label
+        tab_data["auto_balance_pct_label"]  = balance_pct_label
 
         # Leverage для розрахунку qty
         leverage_calc_row = QHBoxLayout()
@@ -1299,6 +1304,9 @@ class FundingTraderApp(QMainWindow):
             "auto_mode_label_widget":    t["auto_mode_label"],
             "auto_threshold_label":      t["auto_min_funding_label"],
             "auto_results_label":        t["auto_results_label"],
+            "auto_calc_group_label":   t["auto_calc_group_label"],
+            "auto_profit_addon_label": t["auto_profit_addon_label"],
+            "auto_balance_pct_label":  t["auto_balance_pct_label"],
         }
         for key, text in mappings.items():
             if key in tab_data:

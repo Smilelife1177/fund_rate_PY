@@ -64,7 +64,10 @@ translations = {
         "auto_error": "Error: {e}",
         "auto_time_format": "{h}h {m}m {s}s",
         "auto_time_soon": "<1s",
-        "auto_col_select": "Select"
+        "auto_col_select": "Select",
+        "auto_calc_group_label":    "── Auto Calculation ──",
+        "auto_profit_addon_label":  "+% to funding:",
+        "auto_balance_pct_label":   "% of balance:",
     },
     "uk": {
         "window_title": "{} Трейдер Фінансування",
@@ -130,6 +133,9 @@ translations = {
         "auto_error": "Помилка: {e}",
         "auto_time_format": "{h}г {m}хв {s}с",
         "auto_time_soon": "<1с",
-        "auto_col_select": "Вибрати"
+        "auto_col_select": "Вибрати",
+        "auto_calc_group_label":    "── Авто-розрахунок ──",
+        "auto_profit_addon_label":  "+% до фандингу:",
+        "auto_balance_pct_label":   "% від балансу:",
     }
 }
