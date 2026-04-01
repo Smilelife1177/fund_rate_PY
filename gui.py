@@ -476,6 +476,37 @@ class FundingTraderApp(QMainWindow):
 
     # ---- Авто-сканування UI ------------------------------------------- #
 
+    def _apply_symbol_with_calc(self, tab_data, symbol, rate):
+        """Застосовує символ + перераховує параметри з auto calculation."""
+        # Виставляємо символ
+        self._on_symbol_changed(tab_data, symbol)
+
+        # ── Profit percentage ─────────────────────────────────────────
+        profit_addon = tab_data.get("auto_profit_addon", 0.3)
+        calculated_profit = round(abs(rate) + profit_addon, 4)
+        tab_data["profit_percentage"] = calculated_profit
+        tab_data["profit_percentage_spinbox"].setValue(calculated_profit)
+        tab_data["profit_percentage_slider"].setValue(int(calculated_profit * 100))
+
+        # ── Leverage на біржі ─────────────────────────────────────────
+        leverage = tab_data.get("leverage", 10.0)
+        if tab_data.get("session"):
+            set_leverage(tab_data["session"], symbol, leverage, tab_data["exchange"])
+
+        # ── Qty ───────────────────────────────────────────────────────
+        try:
+            balance = get_account_balance(tab_data["session"], tab_data["exchange"])
+            price   = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
+            if balance and price and price > 0:
+                balance_pct = tab_data.get("auto_balance_pct", 30.0) / 100
+                qty         = round((balance * balance_pct * leverage) / price, 3)
+                tab_data["qty"] = qty
+                tab_data["qty_spinbox"].setValue(qty)
+        except Exception as e:
+            print(f"Qty calc error on select: {e}")
+
+        self._save()
+
     def _global_auto_scan_tick(self):
         """Один глобальний тік — замість N тіків по вкладках."""
         now = datetime.now(timezone.utc)
@@ -830,7 +861,7 @@ class FundingTraderApp(QMainWindow):
                 symbol = item["symbol"]
                 btn = QPushButton(self.trans["auto_col_select"])
                 btn.setFixedHeight(22)
-                btn.clicked.connect(lambda _, s=symbol: self._on_symbol_changed(tab_data, s))
+                btn.clicked.connect(lambda _, s=symbol, r=item["rate"]: self._apply_symbol_with_calc(tab_data, s, r))
                 table.setCellWidget(row, 3, btn)
             else:
                 table.setCellWidget(row, 3, None)
