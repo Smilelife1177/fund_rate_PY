@@ -219,6 +219,13 @@ class FundingTraderApp(QMainWindow):
     #  Вкладки з торговими налаштуваннями                                 #
     # ------------------------------------------------------------------ #
 
+    def _tab_widget_index(self, tab_data) -> int:
+        """Повертає реальний індекс вкладки в tab_widget для даного tab_data."""
+        list_idx = self.tab_data_list.index(tab_data)
+        # + вкладка йде першою (індекс 0), тому зміщуємо на 1
+        return list_idx + 1
+
+
     def add_new_tab(self, session=None, testnet=None, exchange=None, settings=None):
         self.tab_count += 1
         tab = QWidget()
@@ -615,7 +622,7 @@ class FundingTraderApp(QMainWindow):
             new_td["selected_symbol"] = symbol
             new_td["coin_input"].setText(symbol)
             self._refresh_web_view(new_td)
-            self.tab_widget.setTabText(self.tab_data_list.index(new_td), symbol)
+            self.tab_widget.setTabText(self._tab_widget_index(new_td), symbol)
 
             existing_symbols.add(symbol)
             created += 1
@@ -792,7 +799,7 @@ class FundingTraderApp(QMainWindow):
                 tab_data["selected_symbol"] = symbol
                 tab_data["coin_input"].setText(symbol)
                 self._refresh_web_view(tab_data)
-                self.tab_widget.setTabText(self.tab_data_list.index(tab_data), symbol)
+                self.tab_widget.setTabText(self._tab_widget_index(tab_data), symbol)
 
                 # ── Розрахунок profit percentage ──────────────────────────────
                 funding_rate = abs(best["rate"])
@@ -1235,7 +1242,7 @@ class FundingTraderApp(QMainWindow):
             return
         tab_data["selected_symbol"] = symbol.strip().upper()
         self._refresh_web_view(tab_data)
-        self.tab_widget.setTabText(self.tab_data_list.index(tab_data), tab_data["selected_symbol"])
+        self.tab_widget.setTabText(self._tab_widget_index(tab_data), tab_data["selected_symbol"])
         self._save()
         self._update_tab_funding_data(tab_data)
 
