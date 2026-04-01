@@ -126,10 +126,13 @@ class FundingTraderApp(QMainWindow):
         add_btn.clicked.connect(self.add_new_tab)
         self.add_tab_button = add_btn
 
-        self.tab_widget.addTab(QWidget(), "+")
-        last = self.tab_widget.count() - 1
-        self.tab_widget.setTabEnabled(last, False)
-        self.tab_widget.tabBar().setTabButton(last, QTabBar.ButtonPosition.RightSide, add_btn)
+        # Порожня вкладка-заглушка для + кнопки
+        self._plus_tab_widget = QWidget()
+        self.tab_widget.addTab(self._plus_tab_widget, "")
+        plus_idx = self.tab_widget.count() - 1
+        self.tab_widget.setTabEnabled(plus_idx, False)
+        self.tab_widget.tabBar().setTabButton(plus_idx, QTabBar.ButtonPosition.LeftSide, add_btn)
+        self.tab_widget.tabBar().setTabButton(plus_idx, QTabBar.ButtonPosition.RightSide, None)
 
     # ------------------------------------------------------------------ #
     #  Вкладка статистики                                                 #
@@ -223,10 +226,15 @@ class FundingTraderApp(QMainWindow):
         tab_data = build_tab_data(settings or {}, session, testnet, exchange)
         self._create_tab_ui(tab_layout, tab_data)
         self.tab_data_list.append(tab_data)
-        self.tab_widget.insertTab(
-            self.tab_widget.count() - 1, tab,
-            self.trans["tab_title"].format(self.tab_count),
-        )
+
+        # Вставляємо ПЕРЕД + вкладкою і ПЕРЕД Statistics
+        # Statistics завжди передостання, + завжди остання
+        insert_idx = self.tab_widget.count() - 2  # перед Statistics і +... 
+        # Але + тепер остання, Statistics передостання
+        # Порядок: [coin tabs...] [Statistics] [+]
+        # Вставляємо перед Statistics
+        stats_idx = self.tab_widget.count() - 2
+        self.tab_widget.insertTab(stats_idx, tab, self.trans["tab_title"].format(self.tab_count))
         self.tab_widget.setCurrentWidget(tab)
         tab_data["tab_index"] = self.tab_count
         self._init_tab_timers(tab_data)
