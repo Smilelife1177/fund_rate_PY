@@ -732,12 +732,20 @@ class FundingTraderApp(QMainWindow):
         try:
             threshold = tab_data.get("auto_min_funding", 0.05)
             all_above, near_now = scan_funding_opportunities(threshold)
+                        # ── Сортування: спочатку монети < 1 години, потім решта ──────
+            def sort_key(item):
+                secs = item.get("secs", 9999)
+                is_near = secs < 3600  # < 1 години
+                return (0 if is_near else 1, secs)  # спочатку near, по зростанню часу
 
-            tab_data["auto_scan_results"] = all_above
+            all_above_sorted = sorted(all_above, key=sort_key)
+            tab_data["auto_scan_results"] = all_above_sorted
+
+            # tab_data["auto_scan_results"] = all_above
             self._update_auto_scan_table(tab_data)
 
             t = self.trans
-            best = near_now[0] if near_now else (all_above[0] if all_above else None)
+            best = near_now[0] if near_now else (all_above_sorted[0] if all_above_sorted else None)
 
             if best:
                 symbol = best["symbol"]
@@ -781,7 +789,7 @@ class FundingTraderApp(QMainWindow):
                 )
                 tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #1a6e1a;")
                 tab_data["auto_status_label"].setText(
-                    t["auto_status_found"].format(n=len(all_above), symbol=symbol)
+                    t["auto_status_found"].format(n=len(all_above_sorted), symbol=symbol)
                 )
                 tab_data["auto_status_label"].setStyleSheet("color: #1a6e1a; font-weight: bold;")
             else:
