@@ -1024,6 +1024,23 @@ class FundingTraderApp(QMainWindow):
             selected = avg
 
         tab_data["funding_time_price"] = selected
+                # ── Break-even ліміт-ордер (закриття по ціні входу) ──────────
+        close_side = "Buy" if side == "Sell" else "Sell"
+        tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
+        if tick_size:
+            decimal_places = abs(int(math.log10(tick_size)))
+            breakeven_price = round(selected, decimal_places)
+        else:
+            breakeven_price = selected
+
+        QTimer.singleShot(
+            2000,  # 2 секунди після фандингу
+            lambda: place_limit_close_order(
+                tab_data["session"], symbol, side,
+                tab_data["qty"], breakeven_price, tick_size,
+                tab_data["exchange"]
+            )
+        )
         tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
         target = selected * (
             1 + tab_data["profit_percentage"] / 100 if side == "Buy"
