@@ -68,6 +68,7 @@ translations = {
         "auto_calc_group_label":    "── Auto Calculation ──",
         "auto_profit_addon_label":  "+% to funding:",
         "auto_balance_pct_label":   "% of balance:",
+        "auto_leverage_calc_label": "Leverage for qty:",
     },
     "uk": {
         "window_title": "{} Трейдер Фінансування",
@@ -137,5 +138,6 @@ translations = {
         "auto_calc_group_label":    "── Авто-розрахунок ──",
         "auto_profit_addon_label":  "+% до фандингу:",
         "auto_balance_pct_label":   "% від балансу:",
+        "auto_leverage_calc_label": "Плече для qty:",
     }
 }

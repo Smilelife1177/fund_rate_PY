@@ -745,7 +745,8 @@ class FundingTraderApp(QMainWindow):
 
         # Leverage для розрахунку qty
         leverage_calc_row = QHBoxLayout()
-        leverage_calc_label = QLabel("Плече для qty:")
+        leverage_calc_label = QLabel(t["auto_leverage_calc_label"])
+        tab_data["auto_leverage_calc_label"] = leverage_calc_label
         leverage_calc_spin = QDoubleSpinBox()
         leverage_calc_spin.setRange(1.0, 100.0)
         leverage_calc_spin.setSingleStep(1.0)
@@ -1361,6 +1362,7 @@ class FundingTraderApp(QMainWindow):
             "auto_calc_group_label":   t["auto_calc_group_label"],
             "auto_profit_addon_label": t["auto_profit_addon_label"],
             "auto_balance_pct_label":  t["auto_balance_pct_label"],
+            "auto_leverage_calc_label": t["auto_leverage_calc_label"],
         }
         for key, text in mappings.items():
             if key in tab_data:
