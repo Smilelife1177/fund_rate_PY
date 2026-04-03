@@ -485,3 +485,21 @@ def update_ping(session, ping_label, exchange):
         ping_label.setText("Ping: Error")
         ping_label.setStyleSheet("color: red;")
         print(f"Error pinging server: {e}")
+
+def get_qty_step(session, symbol, exchange):
+    """Повертає мінімальний крок qty для символу."""
+    try:
+        if exchange == "Bybit":
+            response = session.get_instruments_info(category="linear", symbol=symbol)
+            if response["retCode"] == 0 and response["result"]["list"]:
+                lot_filter = response["result"]["list"][0]["lotSizeFilter"]
+                return float(lot_filter["qtyStep"])
+        else:  # Binance
+            info = session.get_symbol_info(symbol)
+            for f in info["filters"]:
+                if f["filterType"] == "LOT_SIZE":
+                    return float(f["stepSize"])
+        return None
+    except Exception as e:
+        print(f"Error fetching qty step: {e}")
+        return None

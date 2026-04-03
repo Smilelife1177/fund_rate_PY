@@ -34,6 +34,7 @@ from logic import (
     close_all_positions, get_optimal_limit_price, get_candle_open_price,
     place_stop_loss_order, get_order_execution_price,
     set_leverage,
+    get_qty_step,
 )
 from translations import translations
 import settings_manager as sm
@@ -514,7 +515,8 @@ class FundingTraderApp(QMainWindow):
             price   = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
             if balance and price and price > 0:
                 balance_pct = tab_data.get("auto_balance_pct", 30.0) / 100
-                qty         = round((balance * balance_pct * leverage) / price, 3)
+                qty_step = get_qty_step(tab_data["session"], symbol, tab_data["exchange"])
+                qty = self._round_qty(leveraged / price, qty_step)
                 tab_data["qty"] = qty
                 tab_data["qty_spinbox"].setValue(qty)
         except Exception as e:
@@ -822,7 +824,8 @@ class FundingTraderApp(QMainWindow):
                         leveraged      = usdt_to_use * leverage_calc
                         # usdt_to_use = balance * 0.30
                         # leveraged   = usdt_to_use * 10
-                        qty         = round(leveraged / price, 3)
+                        qty_step = get_qty_step(tab_data["session"], symbol, tab_data["exchange"])
+                        qty = self._round_qty(leveraged / price, qty_step)
                         tab_data["qty"] = qty
                         tab_data["qty_spinbox"].setValue(qty)
                 except Exception as e:
@@ -1231,6 +1234,14 @@ class FundingTraderApp(QMainWindow):
     #  Обробники змін налаштувань                                         #
     # ------------------------------------------------------------------ #
 
+    def _round_qty(self, qty, qty_step):
+        """Округлює qty до кратного qty_step."""
+        if not qty_step or qty_step <= 0:
+            return round(qty, 3)
+        decimal_places = max(0, round(-math.log10(qty_step)))
+        rounded = math.floor(qty / qty_step) * qty_step
+        return round(rounded, decimal_places)
+
     def _on_exchange_changed(self, tab_data, exchange):
         if tab_data not in self.tab_data_list:
             return
@@ -1311,15 +1322,29 @@ class FundingTraderApp(QMainWindow):
         self._save()
         self._update_leveraged_balance(tab_data)
 
-        # ── Встановлюємо плече на біржі ──────────────────────────────
         symbol = tab_data.get("selected_symbol")
         if symbol and tab_data.get("session"):
+            # Встановлюємо плече на біржі
             ok = set_leverage(tab_data["session"], symbol, value, tab_data["exchange"])
             if not ok:
-                # Показуємо помилку в статус-лейблі якщо є
                 if "ping_label" in tab_data:
                     tab_data["ping_label"].setText("Leverage: Error")
                     tab_data["ping_label"].setStyleSheet("color: red;")
+
+            # Перераховуємо qty з новим плечем
+            try:
+                balance = get_account_balance(tab_data["session"], tab_data["exchange"])
+                price   = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
+                if balance and price and price > 0:
+                    balance_pct = tab_data.get("auto_balance_pct", 30.0) / 100
+                    raw_qty     = (balance * balance_pct * value) / price
+                    qty_step    = get_qty_step(tab_data["session"], symbol, tab_data["exchange"])
+                    qty         = self._round_qty(raw_qty, qty_step)
+                    tab_data["qty"] = qty
+                    tab_data["qty_spinbox"].setValue(qty)
+                    self._save()
+            except Exception as e:
+                print(f"Qty recalc error on leverage change: {e}")
 
     def _on_stop_loss_pct_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:
