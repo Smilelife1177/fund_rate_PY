@@ -68,10 +68,3 @@ js: 2026-04-05T16:00:14.921Z:Property:The state with a data type: unknown does n
 js: 2026-04-05T16:00:15.089Z:Chart.Model.StudyPropertiesOverrider:Study 'Volume' has ambiguous identifier 'volume ma'
 js: Not signed in with the identity provider.
 PS C:\Users\840 G8-i7-16gb-512\Desktop\fund_rate_PY> 
-
-
-
-
-
- 0,68%  -13 UAH  -5.7 UAH  10 UAH  2.9 UAH  1 400 UAH  8с   MEUSDT 
-  1,48%  -66 UAH  -11 UAH  61 UAH  7 UAH  93,93 $  10с   MMTUSDT 
