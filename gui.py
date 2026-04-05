@@ -1010,88 +1010,62 @@ class FundingTraderApp(QMainWindow):
     def _capture_funding_price(self, tab_data, symbol, side):
         if tab_data not in self.tab_data_list:
             return
-        entry_price  = get_order_execution_price(tab_data["session"], symbol, tab_data["open_order_id"], tab_data["exchange"])
-        candle_price = get_candle_open_price(tab_data["session"], symbol, tab_data["exchange"])
-        pre_funding  = tab_data["pre_funding_price"]
 
-        if entry_price:
-            tab_data["position_open"] = True
+        entry_price = get_order_execution_price(
+            tab_data["session"], symbol, tab_data["open_order_id"], tab_data["exchange"]
+        )
 
-        prices = [p for p in [entry_price, candle_price, pre_funding] if p]
-        if not prices:
+        if not entry_price:
+            print(f"Could not get entry price for {symbol}, order id: {tab_data['open_order_id']}")
             tab_data["open_order_id"] = None
             return
 
-        avg = sum(prices) / len(prices)
-        deviations = [abs(p - avg) / avg * 100 for p in prices]
-        if max(deviations) > 0.5:
-            valid = [p for i, p in enumerate(prices) if deviations[i] <= 0.5]
-            selected = sum(valid) / len(valid) if valid else candle_price or avg
-            print(
-                f"Price validation warning {symbol}: entry={entry_price}, "
-                f"candle={candle_price}, pre={pre_funding}. Using {selected}"
-            )
-        else:
-            selected = avg
+        tab_data["position_open"] = True
+        tab_data["funding_time_price"] = entry_price
+        print(f"Entry price for {symbol}: {entry_price}")
 
-        tab_data["funding_time_price"] = selected
-                # ── Break-even ліміт-ордер (закриття по ціні входу) ──────────
-        close_side = "Buy" if side == "Sell" else "Sell"
         tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
-        if tick_size:
-            decimal_places = abs(int(math.log10(tick_size)))
-            breakeven_price = round(selected, decimal_places)
-        else:
-            breakeven_price = selected
+        decimal_places = abs(int(math.log10(tick_size))) if tick_size else 4
 
+        # ── Break-even ліміт-ордер по ціні входу ─────────────────────
+        breakeven_price = round(entry_price, decimal_places)
         QTimer.singleShot(
-            2000,  # 2 секунди після фандингу
+            2000,
             lambda: place_limit_close_order(
                 tab_data["session"], symbol, side,
                 tab_data["qty"], breakeven_price, tick_size,
                 tab_data["exchange"]
             )
         )
-        tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
-        target = selected * (
+
+        # ── Profit ліміт-ордер ────────────────────────────────────────
+        target = entry_price * (
             1 + tab_data["profit_percentage"] / 100 if side == "Buy"
             else 1 - tab_data["profit_percentage"] / 100
         )
 
         if tab_data["auto_limit"]:
             optimal = get_optimal_limit_price(
-                tab_data["session"], symbol, side, selected,
+                tab_data["session"], symbol, side, entry_price,
                 tab_data["exchange"], tab_data["profit_percentage"], tick_size,
             )
             if optimal:
-                actual_profit = abs((optimal - selected) / selected * 100)
+                actual_profit = abs((optimal - entry_price) / entry_price * 100)
                 limit_price = optimal if abs(actual_profit - tab_data["profit_percentage"]) <= 0.1 else target
             else:
                 limit_price = target
         else:
             limit_price = target
 
-        decimal_places = 0
-        if tick_size:
-            decimal_places = abs(int(math.log10(tick_size)))
-            limit_price = round(limit_price, decimal_places)
-
+        limit_price = round(limit_price, decimal_places)
         tab_data["limit_price"] = limit_price
+
         place_limit_close_order(
-            tab_data["session"], symbol, side, tab_data["qty"], limit_price, tick_size, tab_data["exchange"]
+            tab_data["session"], symbol, side,
+            tab_data["qty"], limit_price, tick_size,
+            tab_data["exchange"]
         )
         tab_data["open_order_id"] = None
-
-        if tab_data["stop_loss_enabled"] and tab_data["stop_loss_percentage"] > 0:
-            stop_price = selected * (
-                1 - tab_data["stop_loss_percentage"] / 100 if side == "Buy"
-                else 1 + tab_data["stop_loss_percentage"] / 100
-            )
-            if tick_size:
-                stop_price = round(stop_price, decimal_places)
-            place_stop_loss_order(
-                tab_data["session"], symbol, side, tab_data["qty"], stop_price, tick_size, tab_data["exchange"]
-            )
 
         QTimer.singleShot(1000, lambda: self._log_limit_price_diff(tab_data, symbol))
 
