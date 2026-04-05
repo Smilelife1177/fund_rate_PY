@@ -578,18 +578,22 @@ class FundingTraderApp(QMainWindow):
     #
 
     def _spawn_tabs_from_scan(self, near_now: list):
-        """Створює нові вкладки під кожну знайдену монету (якщо вкладки ще немає)."""
-        # Збираємо символи що вже відкриті
-        existing_symbols = {td["selected_symbol"] for td in self.tab_data_list}
+        # Перевіряємо і selected_symbol і текст в полі введення
+        existing_symbols = set()
+        for td in self.tab_data_list:
+            existing_symbols.add(td.get("selected_symbol", "").upper())
+            existing_symbols.add(td.get("coin_input", QLineEdit()).text().strip().upper())
+
         created = 0
         MAX_AUTO_TABS = 5
 
         for coin in near_now:
             if created >= MAX_AUTO_TABS:
                 break
-            symbol = coin["symbol"]
+            symbol = coin["symbol"].upper()
             if symbol in existing_symbols:
-                continue  # вкладка вже є — не дублюємо
+                print(f"Tab for {symbol} already exists — skipping")
+                continue
 
             # Беремо налаштування з першої вкладки як шаблон
             template = self.tab_data_list[0] if self.tab_data_list else {}
@@ -931,10 +935,13 @@ class FundingTraderApp(QMainWindow):
     # ------------------------------------------------------------------ #
     #  Торгова логіка                                                     #
     # ------------------------------------------------------------------ #
-
     def _check_funding_time(self, tab_data):
         if tab_data not in self.tab_data_list or not tab_data["funding_data"]:
             self._reset_tab_labels(tab_data)
+            return
+
+        # ── Захист від подвійного ордеру ─────────────────────────────
+        if tab_data.get("order_placed_this_cycle"):
             return
         # self._check_auto_scan_trigger(tab_data)
 
@@ -968,6 +975,7 @@ class FundingTraderApp(QMainWindow):
                 tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
             )
             if tab_data["open_order_id"]:
+                tab_data["order_placed_this_cycle"] = True  # ← ставимо прапор
                 delay_ms = int((time_to_funding - 0.5) * 1000)
                 QTimer.singleShot(delay_ms, lambda: self._capture_funding_price(tab_data, symbol, side))
             tab_data["pre_funding_price"] = None
@@ -1137,6 +1145,7 @@ class FundingTraderApp(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2):
+        tab_data["order_placed_this_cycle"] = False
         if tab_data not in self.tab_data_list:
             return
         for attempt in range(retry_count):

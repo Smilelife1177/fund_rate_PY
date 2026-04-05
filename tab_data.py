@@ -32,6 +32,7 @@ DEFAULT_TAB_STATE = {
     "auto_profit_addon": 0.3,
     "auto_balance_pct": 30.0,
     "auto_leverage_calc": 10.0,
+    "order_placed_this_cycle": False,
 }
 
 
