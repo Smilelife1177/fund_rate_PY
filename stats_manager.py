@@ -44,3 +44,39 @@ def read_stats_csv(filepath: str = STATS_CSV_FILE) -> list[list[str]]:
         return []
     with open(filepath, "r", encoding="utf-8") as f:
         return list(csv.reader(f))
+
+
+def write_imported_trades(trades: list[dict], filepath: str = STATS_CSV_FILE) -> int:
+    """
+    Записує імпортовані угоди в CSV.
+    Повертає кількість записаних рядків (пропускає дублікати по Дата_Час+Тикер).
+    """
+    existing = read_stats_csv(filepath)
+    # Збираємо ключі існуючих записів щоб не дублювати
+    existing_keys = set()
+    for row in existing[1:]:  # пропускаємо заголовок
+        if len(row) >= 9:
+            existing_keys.add((row[0], row[8]))  # Дата_Час + Тикер
+
+    written = 0
+    with open(filepath, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        for t in trades:
+            key = (t["datetime"], t["symbol"])
+            if key in existing_keys:
+                continue
+            writer.writerow([
+                t["datetime"],
+                t["profit_pct"],
+                t["funding"],
+                t["pnl"],
+                t["income"],
+                t["commission"],
+                t["volume"],
+                t["in_trade"],
+                t["symbol"],
+            ])
+            existing_keys.add(key)
+            written += 1
+
+    return written

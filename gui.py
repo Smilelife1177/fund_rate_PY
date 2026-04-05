@@ -35,13 +35,13 @@ from logic import (
     place_stop_loss_order, get_order_execution_price,
     set_leverage,
     get_qty_step,
+    get_closed_trades,
 )
 from translations import translations
 import settings_manager as sm
 import stats_manager as stats
 from auto_scanner import scan_funding_opportunities, format_funding_time
 from tab_data import build_tab_data
-
 
 # ---------------------------------------------------------------------------
 # Головне вікно
@@ -156,6 +156,10 @@ class FundingTraderApp(QMainWindow):
         add_btn.clicked.connect(self._open_stats_input_dialog)
         btn_row.addWidget(add_btn)
 
+        import_btn = QPushButton("Імпорт з біржі")
+        import_btn.clicked.connect(self._open_import_dialog)
+        btn_row.addWidget(import_btn)
+
         layout.addLayout(btn_row)
 
         idx = self.tab_widget.addTab(tab, "Statistics" if self.language == "en" else "Статистика")
@@ -215,6 +219,56 @@ class FundingTraderApp(QMainWindow):
         stats.write_stats_row(values)
         QMessageBox.information(self, "Успіх", "Дані успішно записано в trade_stats.csv")
         self._update_stats_table()
+
+
+
+    def _open_import_dialog(self):
+        from PyQt6.QtWidgets import QSpinBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Імпорт угод з біржі")
+        dialog.setMinimumWidth(350)
+        layout = QVBoxLayout(dialog)
+
+        layout.addWidget(QLabel("Кількість останніх угод для імпорту:"))
+        spin = QSpinBox()
+        spin.setRange(1, 200)
+        spin.setValue(20)
+        layout.addWidget(spin)
+
+        # Вибір вкладки (біржі)
+        layout.addWidget(QLabel("Акаунт (вкладка):"))
+        combo = QComboBox()
+        for td in self.tab_data_list:
+            combo.addItem(f"{td['exchange']} — {td['selected_symbol']}")
+        layout.addWidget(combo)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        limit   = spin.value()
+        tab_idx = combo.currentIndex()
+        td      = self.tab_data_list[tab_idx]
+
+        trades = get_closed_trades(td["session"], td["exchange"], limit=limit)
+        if not trades:
+            QMessageBox.warning(self, "Імпорт", "Не знайдено угод або помилка отримання даних.")
+            return
+
+        written = stats.write_imported_trades(trades)
+        self._update_stats_table()
+        QMessageBox.information(
+            self, "Імпорт завершено",
+            f"Імпортовано: {written} угод\nПропущено дублікатів: {len(trades) - written}"
+        )
+
 
     # ------------------------------------------------------------------ #
     #  Вкладки з торговими налаштуваннями                                 #

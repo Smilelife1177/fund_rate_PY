@@ -503,3 +503,80 @@ def get_qty_step(session, symbol, exchange):
     except Exception as e:
         print(f"Error fetching qty step: {e}")
         return None
+
+def get_closed_trades(session, exchange, limit=50):
+    """Повертає список закритих угод з біржі."""
+    try:
+        if exchange == "Bybit":
+            # Закриті позиції
+            pnl_resp = session.get_closed_pnl(category="linear", limit=limit)
+            if pnl_resp["retCode"] != 0:
+                print(f"Error fetching closed pnl: {pnl_resp['retMsg']}")
+                return []
+
+            # Лог транзакцій для комісії і фандингу
+            log_resp = session.get_transaction_log(category="linear", limit=200)
+            log_entries = log_resp["result"]["list"] if log_resp["retCode"] == 0 else []
+
+            trades = []
+            for pos in pnl_resp["result"]["list"]:
+                symbol      = pos["symbol"]
+                qty         = float(pos["qty"])
+                entry_price = float(pos["avgEntryPrice"])
+                exit_price  = float(pos["avgExitPrice"])
+                pnl         = float(pos["closedPnl"])
+                created_ms  = int(pos["createdTime"])
+                updated_ms  = int(pos["updatedTime"])
+
+                # Час в угоді
+                duration_sec = (updated_ms - created_ms) / 1000
+                if duration_sec < 60:
+                    in_trade = f"{int(duration_sec)}с"
+                else:
+                    in_trade = f"{int(duration_sec // 60)}хв"
+
+                # Дата
+                trade_time = datetime.fromtimestamp(created_ms / 1000).strftime("%Y-%m-%d %H:%M")
+
+                # Обʼєм в USDT
+                volume = round(qty * entry_price, 2)
+
+                # Процент прибутку від обʼєму
+                profit_pct = round((pnl / volume) * 100, 2) if volume > 0 else 0
+
+                # Комісія і фандинг з лога транзакцій
+                commission = 0.0
+                funding    = 0.0
+                for entry in log_entries:
+                    if entry["symbol"] != symbol:
+                        continue
+                    entry_ms = int(entry["transactionTime"])
+                    # Беремо записи в межах угоди ±10 секунд
+                    if not (created_ms - 10000 <= entry_ms <= updated_ms + 10000):
+                        continue
+                    if entry["type"] == "TRADE":
+                        commission += abs(float(entry.get("fee", 0)))
+                    elif entry["type"] == "SETTLEMENT":
+                        funding += float(entry.get("cashFlow", 0))
+
+                trades.append({
+                    "datetime":   trade_time,
+                    "profit_pct": f"{profit_pct:+.2f}%",
+                    "funding":    round(funding, 4),
+                    "pnl":        round(pnl, 4),
+                    "income":     round(pnl + funding, 4),
+                    "commission": round(commission, 4),
+                    "volume":     volume,
+                    "in_trade":   in_trade,
+                    "symbol":     symbol,
+                })
+
+            return trades
+
+        else:  # Binance — TODO
+            print("Binance import not implemented yet")
+            return []
+
+    except Exception as e:
+        print(f"Error fetching closed trades: {e}")
+        return []
