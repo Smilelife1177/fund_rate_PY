@@ -1091,34 +1091,57 @@ class FundingTraderApp(QMainWindow):
                 tab_data["exchange"]
             )
         )
-
+#
         # ── Profit ліміт-ордер ────────────────────────────────────────
-        target = entry_price * (
-            1 + tab_data["profit_percentage"] / 100 if side == "Buy"
-            else 1 - tab_data["profit_percentage"] / 100
-        )
+        if side == "Buy":
+            # Лонг: закриваємо Sell limit вище entry
+            target = entry_price * (1 + tab_data["profit_percentage"] / 100)
+        else:
+            # Шорт: закриваємо Buy limit нижче entry
+            target = entry_price * (1 - tab_data["profit_percentage"] / 100)
 
-        if tab_data["auto_limit"]:
+        # Вибір ціни залежно від режиму
+        if tab_data.get("auto_limit", False):
             optimal = get_optimal_limit_price(
                 tab_data["session"], symbol, side, entry_price,
-                tab_data["exchange"], tab_data["profit_percentage"], tick_size,
+                tab_data["exchange"], tab_data["profit_percentage"], tick_size
             )
             if optimal:
                 actual_profit = abs((optimal - entry_price) / entry_price * 100)
-                limit_price = optimal if abs(actual_profit - tab_data["profit_percentage"]) <= 0.1 else target
+                # Якщо оптимальна ціна дає прийнятне відхилення — використовуємо її
+                if abs(actual_profit - tab_data["profit_percentage"]) <= 0.20:
+                    limit_price = optimal
+                else:
+                    limit_price = target
             else:
                 limit_price = target
         else:
-            limit_price = target
+            limit_price = target   # <-- Якщо авто-ліміт вимкнено — завжди точний target
 
-        limit_price = round(limit_price, decimal_places)
+        # === КРИТИЧНЕ ВИПРАВЛЕННЯ: Округлення в бік прибутку ===
+        if tick_size:
+            decimal_places = abs(int(math.log10(tick_size)))
+            
+            if side == "Buy":      # Sell limit (лонг) → хочемо вищу ціну → округлюємо вниз
+                limit_price = math.floor(limit_price / tick_size) * tick_size
+            else:                  # Buy limit (шорт) → хочемо нижчу ціну → округлюємо вгору
+                limit_price = math.ceil(limit_price / tick_size) * tick_size
+
+        # Фінальне округлення
+        limit_price = round(limit_price, decimal_places if tick_size else 4)
+        
         tab_data["limit_price"] = limit_price
 
+        print(f"Placing profit limit {side} close order at {limit_price} "
+              f"(desired {tab_data['profit_percentage']}%, entry {entry_price})")
+#
         place_limit_close_order(
             tab_data["session"], symbol, side,
             tab_data["qty"], limit_price, tick_size,
             tab_data["exchange"]
         )
+        print(f"Profit limit order placed at {limit_price} "
+              f"({((limit_price - entry_price)/entry_price*100 if side=='Sell' else (limit_price - entry_price)/entry_price*100):+.2f}%)")
         tab_data["open_order_id"] = None
 
         QTimer.singleShot(1000, lambda: self._log_limit_price_diff(tab_data, symbol))

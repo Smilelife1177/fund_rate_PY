@@ -178,56 +178,56 @@ def place_stop_loss_order(session, symbol, side, qty, stop_price, tick_size, exc
         return None
 
 def get_optimal_limit_price(session, symbol, side, current_price, exchange, profit_percentage, tick_size):
-    """Fetch order book and determine optimal limit price based on order density."""
+    """Покращена версія з правильним боком ордербуку."""
     try:
         print(f"Fetching order book for {symbol} to determine optimal limit price...")
+
         if exchange == "Bybit":
             response = session.get_orderbook(category="linear", symbol=symbol, limit=50)
             if response["retCode"] != 0 or not response["result"]:
-                print(f"Error fetching order book: {response['retMsg']}")
                 return None
-            orderbook = response["result"]
-            bids = [(float(price), float(qty)) for price, qty in orderbook["b"]]
-            asks = [(float(price), float(qty)) for price, qty in orderbook["a"]]
+            bids = [(float(p), float(q)) for p, q in response["result"]["b"]]
+            asks = [(float(p), float(q)) for p, q in response["result"]["a"]]
         else:  # Binance
             response = session.get_order_book(symbol=symbol, limit=50)
-            bids = [(float(price), float(qty)) for price, qty in response["bids"]]
-            asks = [(float(price), float(qty)) for price, qty in response["asks"]]
+            bids = [(float(p), float(q)) for p, q in response["bids"]]
+            asks = [(float(p), float(q)) for p, q in response["asks"]]
 
-        # Define price range based on side and profit percentage
-        if side == "Buy":
-            # For Buy, we place a Sell limit order above current price
-            min_price = current_price * (1 + profit_percentage / 200)  # Halfway to profit target
-            max_price = current_price * (1 + profit_percentage / 50)    # Up to 2x profit target
-            relevant_orders = [(price, qty) for price, qty in asks if min_price <= price <= max_price]
-        else:  # Sell
-            # For Sell, we place a Buy limit order below current price
-            max_price = current_price * (1 - profit_percentage / 200)
-            min_price = current_price * (1 - profit_percentage / 50)
-            relevant_orders = [(price, qty) for price, qty in bids if min_price <= price <= max_price]
+        # Правильний бік ордербуку
+        if side == "Buy":   # Лонг → Sell limit → шукаємо в bids
+            target = current_price * (1 + profit_percentage / 100)
+            min_p = target * 0.992
+            max_p = target * 1.018
+            relevant = [(price, qty) for price, qty in bids if min_p <= price <= max_p]
+        else:               # Шорт → Buy limit → шукаємо в asks
+            target = current_price * (1 - profit_percentage / 100)
+            min_p = target * 0.982
+            max_p = target * 1.008
+            relevant = [(price, qty) for price, qty in asks if min_p <= price <= max_p]
 
-        if not relevant_orders:
-            print(f"No orders found in the desired price range for {symbol}")
+        if not relevant:
+            print(f"No liquidity in target range for {symbol}")
             return None
 
-        # Find price with highest cumulative volume
+        decimal_places = abs(int(math.log10(tick_size))) if tick_size else 4
         price_volumes = {}
-        for price, qty in relevant_orders:
-            rounded_price = round(price, abs(int(math.log10(tick_size)))) if tick_size else price
-            price_volumes[rounded_price] = price_volumes.get(rounded_price, 0) + qty
-
-        if not price_volumes:
-            print(f"No valid price levels found after rounding for {symbol}")
-            return None
+        for price, qty in relevant:
+            rounded = round(price, decimal_places)
+            price_volumes[rounded] = price_volumes.get(rounded, 0) + qty
 
         optimal_price = max(price_volumes, key=price_volumes.get)
-        print(f"Optimal limit price for {symbol}: {optimal_price} (volume: {price_volumes[optimal_price]})")
-        return optimal_price
+        print(f"Optimal limit price: {optimal_price} (volume: {price_volumes[optimal_price]:.1f})")
+
+        actual_profit = abs((optimal_price - current_price) / current_price * 100)
+        if abs(actual_profit - profit_percentage) <= 0.20:
+            return optimal_price
+        else:
+            return None
 
     except Exception as e:
-        print(f"Error fetching optimal limit price: {e}")
+        print(f"Error in get_optimal_limit_price: {e}")
         return None
-#
+
 def get_next_funding_time(funding_time, funding_interval_hours):
     funding_dt = datetime.fromtimestamp(funding_time, tz=timezone.utc)
     current_time = datetime.now(timezone.utc)
