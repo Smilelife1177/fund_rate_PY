@@ -139,6 +139,8 @@ def get_candle_open_price(session, symbol, exchange):
 
 def place_stop_loss_order(session, symbol, side, qty, stop_price, tick_size, exchange):
     try:
+        qty_step = get_qty_step(session, symbol, exchange)
+        qty = round_qty(qty, qty_step)
         close_side = "Buy" if side == "Sell" else "Sell"
         if tick_size:
             decimal_places = abs(int(math.log10(tick_size)))
@@ -248,14 +250,18 @@ def get_next_funding_time(funding_time, funding_interval_hours):
 #
 def place_market_order(session, symbol, side, qty, exchange):
     try:
-        print(f"Placing market {side} order for {symbol} with quantity {qty}...")
+        qty_step = get_qty_step(session, symbol, exchange)
+        rounded_qty = round_qty(qty, qty_step)
+        
+        print(f"Placing market {side} order for {symbol} with quantity {rounded_qty} (original: {qty}, step: {qty_step})...")
+        
         if exchange == "Bybit":
             response = session.place_order(
                 category="linear",
                 symbol=symbol,
                 side=side,
                 orderType="Market",
-                qty=str(qty),
+                qty=str(rounded_qty),
                 timeInForce="GTC"
             )
             if response["retCode"] == 0:
@@ -326,6 +332,9 @@ def get_order_execution_price(session, symbol, order_id, exchange):
 
 def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchange):
     try:
+        qty_step = get_qty_step(session, symbol, exchange)
+        qty = round_qty(qty, qty_step)
+        print(f"Placing limit {side} order for {symbol} with quantity {rounded_qty} (original: {qty}, step: {qty_step})...")
         close_side = "Buy" if side == "Sell" else "Sell"
         if tick_size:
             decimal_places = abs(int(math.log10(tick_size)))
@@ -337,7 +346,7 @@ def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchan
                 symbol=symbol,
                 side=close_side,
                 orderType="Limit",
-                qty=str(qty),
+                qty=str(rounded_qty),
                 price=str(price),
                 timeInForce="GTC",
                 reduceOnly=True
@@ -367,6 +376,8 @@ def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchan
 def close_all_positions(session, exchange, symbol=None):
     """Close all open positions on the exchange."""
     try:
+        qty_step = get_qty_step(session, symbol, exchange)
+        qty = round_qty(qty, qty_step)
         print(f"Closing all open positions on {exchange}...")
         if exchange == "Bybit":
             response = session.get_positions(category="linear", settleCoin="USDT")
@@ -585,3 +596,11 @@ def get_closed_trades(session, exchange, limit=50):
     except Exception as e:
         print(f"Error fetching closed trades: {e}")
         return []
+
+
+
+def round_qty(qty: float, qty_step: float) -> float:
+    """Округляє кількість до дозволеного кроку біржі."""
+    if not qty_step or qty_step <= 0:
+        return round(qty, 3)
+    return math.floor(qty / qty_step) * qty_step
