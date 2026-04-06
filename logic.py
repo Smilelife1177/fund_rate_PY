@@ -505,75 +505,80 @@ def get_qty_step(session, symbol, exchange):
         return None
 
 def get_closed_trades(session, exchange, limit=50):
-    """Повертає список закритих угод з біржі."""
+    """Оновлена версія імпорту — ближче до ручного введення (крапка, без лапок)."""
     try:
         if exchange == "Bybit":
-            # Закриті позиції
             pnl_resp = session.get_closed_pnl(category="linear", limit=limit)
             if pnl_resp["retCode"] != 0:
                 print(f"Error fetching closed pnl: {pnl_resp['retMsg']}")
                 return []
 
-            # Лог транзакцій для комісії і фандингу
-            log_resp = session.get_transaction_log(category="linear", limit=200)
-            log_entries = log_resp["result"]["list"] if log_resp["retCode"] == 0 else []
+            log_resp = session.get_transaction_log(category="linear", limit=400)  # збільшили ліміт
+            log_entries = log_resp["result"]["list"] if log_resp.get("retCode") == 0 else []
 
             trades = []
             for pos in pnl_resp["result"]["list"]:
                 symbol      = pos["symbol"]
-                qty         = float(pos["qty"])
-                entry_price = float(pos["avgEntryPrice"])
-                exit_price  = float(pos["avgExitPrice"])
-                pnl         = float(pos["closedPnl"])
-                created_ms  = int(pos["createdTime"])
-                updated_ms  = int(pos["updatedTime"])
+                qty         = float(pos.get("qty", 0))
+                entry_price = float(pos.get("avgEntryPrice", 0))
+                exit_price  = float(pos.get("avgExitPrice", 0))
+                closed_pnl  = float(pos.get("closedPnl", 0))      # net pnl після всіх fee
+                created_ms  = int(pos.get("createdTime", 0))
+                updated_ms  = int(pos.get("updatedTime", 0))
 
-                # Час в угоді
-                duration_sec = (updated_ms - created_ms) / 1000
-                if duration_sec < 60:
+                # === В-сделке (тривалість) ===
+                duration_sec = (updated_ms - created_ms) / 1000.0
+                if duration_sec < 1:
+                    in_trade = "0с"
+                elif duration_sec < 60:
                     in_trade = f"{int(duration_sec)}с"
                 else:
                     in_trade = f"{int(duration_sec // 60)}хв"
 
-                # Дата
                 trade_time = datetime.fromtimestamp(created_ms / 1000).strftime("%Y-%m-%d %H:%M")
 
-                # Обʼєм в USDT
                 volume = round(qty * entry_price, 2)
 
-                # Процент прибутку від обʼєму
-                profit_pct = round((pnl / volume) * 100, 2) if volume > 0 else 0
+                # === Процент (від об'єму угоди) ===
+                profit_pct = round((closed_pnl / volume) * 100, 2) if volume > 0 else 0.0
 
-                # Комісія і фандинг з лога транзакцій
+                # === Комісія + Фандинг ===
                 commission = 0.0
                 funding    = 0.0
+
                 for entry in log_entries:
-                    if entry["symbol"] != symbol:
+                    if entry.get("symbol") != symbol:
                         continue
-                    entry_ms = int(entry["transactionTime"])
-                    # Беремо записи в межах угоди ±10 секунд
-                    if not (created_ms - 10000 <= entry_ms <= updated_ms + 10000):
+                    entry_ms = int(entry.get("transactionTime", 0))
+                    # Розширили вікно, бо funding може приходити з невеликою затримкою
+                    if not (created_ms - 30000 <= entry_ms <= updated_ms + 30000):
                         continue
-                    if entry["type"] == "TRADE":
+
+                    tx_type = entry.get("type", "")
+                    if tx_type == "TRADE":
                         commission += abs(float(entry.get("fee", 0)))
-                    elif entry["type"] == "SETTLEMENT":
+                    elif tx_type == "SETTLEMENT":
                         funding += float(entry.get("cashFlow", 0))
+
+                # === Доход (gross прибуток без комісії та фандингу) ===
+                # closed_pnl вже включає вирахування fee і funding, тому gross ≈ closed_pnl + commission + funding (з урахуванням знаків)
+                gross_income = closed_pnl + commission + funding   # funding може бути негативним
 
                 trades.append({
                     "datetime":   trade_time,
-                    "profit_pct": f"{profit_pct:+.2f}%",
-                    "funding":    round(funding, 4),
-                    "pnl":        round(pnl, 4),
-                    "income":     round(pnl + funding, 4),
-                    "commission": round(commission, 4),
-                    "volume":     volume,
+                    "profit_pct": f"{profit_pct:+.2f}%",           # +0.95% або -0.53%
+                    "funding":    f"{round(funding, 2):.2f}",      # -0.53
+                    "pnl":        f"{round(closed_pnl, 3):.3f}",   # 0.040
+                    "income":     f"{round(gross_income, 2):.2f}", # головне поле, яке треба виправити
+                    "commission": f"{round(commission, 2):.2f}",
+                    "volume":     f"{volume:.2f}",
                     "in_trade":   in_trade,
                     "symbol":     symbol,
                 })
 
             return trades
 
-        else:  # Binance — TODO
+        else:
             print("Binance import not implemented yet")
             return []
 
