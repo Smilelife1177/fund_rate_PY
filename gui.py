@@ -569,8 +569,9 @@ class FundingTraderApp(QMainWindow):
             price   = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
             if balance and price and price > 0:
                 balance_pct = tab_data.get("auto_balance_pct", 30.0) / 100
-                qty_step = get_qty_step(tab_data["session"], symbol, tab_data["exchange"])
-                qty = self._round_qty(leveraged / price, qty_step)
+                raw_qty     = (balance * balance_pct * leverage) / price
+                qty_step    = get_qty_step(tab_data["session"], symbol, tab_data["exchange"])
+                qty         = self._round_qty(raw_qty, qty_step)
                 tab_data["qty"] = qty
                 tab_data["qty_spinbox"].setValue(qty)
         except Exception as e:
@@ -1493,7 +1494,6 @@ class FundingTraderApp(QMainWindow):
         )
         
         self._save()
-        self._recalculate_auto_qty(tab_data)
 
     def _update_tab_labels(self, tab_data):
         t = self.trans
