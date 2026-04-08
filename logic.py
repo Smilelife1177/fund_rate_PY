@@ -332,14 +332,17 @@ def get_order_execution_price(session, symbol, order_id, exchange):
 
 def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchange):
     try:
-        qty_step = get_qty_step(session, symbol, exchange)
-        qty = round_qty(qty, qty_step)
-        print(f"Placing limit {side} order for {symbol} with quantity {rounded_qty} (original: {qty}, step: {qty_step})...")
         close_side = "Buy" if side == "Sell" else "Sell"
+        
+        qty_step   = get_qty_step(session, symbol, exchange)
+        rounded_qty = round_qty(qty, qty_step) 
+        
         if tick_size:
             decimal_places = abs(int(math.log10(tick_size)))
             price = round(price, decimal_places)
-        print(f"Placing limit {close_side} order for {symbol} at {price} with quantity {qty}...")
+            
+        print(f"Placing limit {close_side} order for {symbol} at {price} with quantity {rounded_qty}...")
+        
         if exchange == "Bybit":
             response = session.place_order(
                 category="linear",
