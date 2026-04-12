@@ -1023,7 +1023,28 @@ class FundingTraderApp(QMainWindow):
             )
 
         entry_window = tab_data["entry_time_seconds"]
-        if entry_window - 1.0 <= time_to_funding <= entry_window and not tab_data["open_order_id"]:
+
+        if time_to_funding <= entry_window and time_to_funding > 0 and not tab_data["open_order_id"]:
+            print(f"[ORDER TRIGGER] {symbol} time_to_funding={time_to_funding:.3f} entry_window={entry_window}")
+            side = (
+                ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"]
+                else ("Buy" if rate > 0 else "Sell")
+            )
+            tab_data["open_order_id"] = place_market_order(
+                tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
+            )
+            if tab_data["open_order_id"]:
+                tab_data["order_placed_this_cycle"] = True
+                delay_ms = int((time_to_funding - 0.5) * 1000)
+                delay_ms = max(0, delay_ms)  # не може бути від'ємним
+                QTimer.singleShot(delay_ms, lambda: self._capture_funding_price(tab_data, symbol, side))
+            tab_data["pre_funding_price"] = None
+
+        if time_to_funding <= 10:
+            print(f"[COUNTDOWN] {symbol} time_to_funding={time_to_funding:.3f}s entry_window={tab_data['entry_time_seconds']}s order_id={tab_data['open_order_id']}")
+
+
+        # if entry_window - 1.0 <= time_to_funding <= entry_window and not tab_data["open_order_id"]:
             side = (
                 ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"]
                 else ("Buy" if rate > 0 else "Sell")
