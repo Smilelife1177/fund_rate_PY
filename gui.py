@@ -854,20 +854,18 @@ class FundingTraderApp(QMainWindow):
             tab_data["auto_status_label"].setStyleSheet("color: #555; font-style: italic;")
         self._update_auto_scan_table(tab_data)
 
+
     def _run_auto_scan(self, tab_data):
         try:
             threshold = tab_data.get("auto_min_funding", 0.05)
             all_above, near_now = scan_funding_opportunities(threshold)
-                        # ── Сортування: спочатку монети < 1 години, потім решта ──────
+
             def sort_key(item):
                 secs = item.get("secs", 9999)
-                is_near = secs < 3600  # < 1 години
-                return (0 if is_near else 1, secs)  # спочатку near, по зростанню часу
+                return (0 if secs < 3600 else 1, secs)
 
             all_above_sorted = sorted(all_above, key=sort_key)
             tab_data["auto_scan_results"] = all_above_sorted
-
-            # tab_data["auto_scan_results"] = all_above
             self._update_auto_scan_table(tab_data)
 
             t = self.trans
@@ -877,41 +875,56 @@ class FundingTraderApp(QMainWindow):
                 symbol = best["symbol"]
                 tab_data["auto_selected_symbol"] = symbol
                 tab_data["selected_symbol"] = symbol
-                self._recalculate_auto_qty(tab_data)
-                self._update_tab_funding_data(tab_data)
                 tab_data["coin_input"].setText(symbol)
                 self._refresh_web_view(tab_data)
                 self.tab_widget.setTabText(self._tab_widget_index(tab_data), symbol)
 
-                # ── Розрахунок profit percentage ──────────────────────────────
+                # ── Profit percentage ─────────────────────────────────────
                 funding_rate = abs(best["rate"])
                 profit_addon = tab_data.get("auto_profit_addon", 0.3)
                 calculated_profit = round(funding_rate + profit_addon, 4)
-                # calculated_profit = round(funding_rate + 0.3, 4)
                 tab_data["profit_percentage"] = calculated_profit
                 tab_data["profit_percentage_spinbox"].setValue(calculated_profit)
                 tab_data["profit_percentage_slider"].setValue(int(calculated_profit * 100))
 
-                # ── Розрахунок qty ────────────────────────────────────────────
-                try:
-                    balance = get_account_balance(tab_data["session"], tab_data["exchange"])
-                    price   = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
-                    if balance and price and price > 0:
-                        balance_pct    = tab_data.get("auto_balance_pct", 30.0) / 100
-                        leverage_calc  = tab_data.get("auto_leverage_calc", 10.0)
-                        usdt_to_use    = balance * balance_pct
-                        leveraged      = usdt_to_use * leverage_calc
-                        # usdt_to_use = balance * 0.30
-                        # leveraged   = usdt_to_use * 10
+                # ── Qty + funding data в окремому потоці ──────────────────
+                def _background_calc():
+                    try:
+                        balance  = get_account_balance(tab_data["session"], tab_data["exchange"])
+                        price    = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
                         qty_step = get_qty_step(tab_data["session"], symbol, tab_data["exchange"])
-                        qty = self._round_qty(leveraged / price, qty_step)
+                        funding  = get_funding_data(tab_data["session"], symbol, tab_data["exchange"])
+                        return balance, price, qty_step, funding
+                    except Exception as e:
+                        print(f"Background calc error: {e}")
+                        return None, None, None, None
+
+                def _apply_results(results):
+                    balance, price, qty_step, funding = results
+                    if balance and price and price > 0:
+                        balance_pct   = tab_data.get("auto_balance_pct", 30.0) / 100
+                        leverage_calc = tab_data.get("leverage", 10.0)
+                        qty = self._round_qty((balance * balance_pct * leverage_calc) / price, qty_step)
                         tab_data["qty"] = qty
                         tab_data["qty_spinbox"].setValue(qty)
-                except Exception as e:
-                    print(f"Qty calc error: {e}")
+                    if funding:
+                        tab_data["funding_data"] = funding
+                        self._update_tab_funding_data(tab_data)
+                    self._save()
 
-                self._save()
-                self._update_tab_funding_data(tab_data)
+                from PyQt6.QtCore import QThreadPool, QRunnable
+                class Worker(QRunnable):
+                    def __init__(self, fn, callback):
+                        super().__init__()
+                        self._fn = fn
+                        self._cb = callback
+                    def run(self):
+                        result = self._fn()
+                        # Повертаємось в головний потік через QTimer
+                        QTimer.singleShot(0, lambda: self._cb(result))
+
+                worker = Worker(_background_calc, _apply_results)
+                QThreadPool.globalInstance().start(worker)
 
                 tab_data["auto_chosen_label"].setText(
                     t["auto_chosen_selected"].format(symbol=symbol, rate=best["rate"])
@@ -931,6 +944,8 @@ class FundingTraderApp(QMainWindow):
             print(f"Auto scan error: {e}")
             tab_data["auto_status_label"].setText(self.trans["auto_error"].format(e=e))
             tab_data["auto_status_label"].setStyleSheet("color: red;")
+
+
 
     def _update_auto_scan_table(self, tab_data):
         results = tab_data.get("auto_scan_results", [])
