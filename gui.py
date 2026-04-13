@@ -172,6 +172,7 @@ class FundingTraderApp(QMainWindow):
             self.stats_table.clear()
             return
         headers, data_rows = rows[0], rows[1:]
+        data_rows = list(reversed(data_rows))  # ← додати
         self.stats_table.setColumnCount(len(headers))
         self.stats_table.setHorizontalHeaderLabels(headers)
         self.stats_table.setRowCount(len(data_rows))
