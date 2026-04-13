@@ -1381,7 +1381,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["session"] = initialize_client(exchange, tab_data["testnet"])
         self._save()
         self._update_tab_funding_data(tab_data)
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_testnet_changed(self, tab_data, state):
         if tab_data not in self.tab_data_list:
@@ -1390,7 +1390,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["session"] = initialize_client(tab_data["exchange"], tab_data["testnet"])
         self._save()
         self._update_tab_funding_data(tab_data)
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_symbol_changed(self, tab_data, symbol):
         if tab_data not in self.tab_data_list:
@@ -1400,7 +1400,7 @@ class FundingTraderApp(QMainWindow):
         self.tab_widget.setTabText(self._tab_widget_index(tab_data), tab_data["selected_symbol"])
         self._save()
         self._update_tab_funding_data(tab_data)
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_funding_interval_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list or not value:
@@ -1408,14 +1408,14 @@ class FundingTraderApp(QMainWindow):
         tab_data["funding_interval_hours"] = float(value)
         self._save()
         self._update_tab_funding_data(tab_data)
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_entry_time_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:
             return
         tab_data["entry_time_seconds"] = value
         self._save()
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_qty_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:
@@ -1423,7 +1423,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["qty"] = value
         self._save()
         self._update_volume_label(tab_data)
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_profit_pct_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:
@@ -1431,7 +1431,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["profit_percentage"] = value
         tab_data["profit_percentage_slider"].setValue(int(value * 100))
         self._save()
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_profit_slider_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:
@@ -1439,14 +1439,14 @@ class FundingTraderApp(QMainWindow):
         tab_data["profit_percentage"] = value / 100.0
         tab_data["profit_percentage_spinbox"].setValue(tab_data["profit_percentage"])
         self._save()
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_auto_limit_changed(self, tab_data, state):
         if tab_data not in self.tab_data_list:
             return
         tab_data["auto_limit"] = state == Qt.CheckState.Checked.value
         self._save()
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_leverage_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:
@@ -1454,7 +1454,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["leverage"] = value
         self._save()
         self._update_leveraged_balance(tab_data)
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
         symbol = tab_data.get("selected_symbol")
         if symbol and tab_data.get("session"):
@@ -1480,39 +1480,39 @@ class FundingTraderApp(QMainWindow):
             except Exception as e:
                 print(f"Qty recalc error on leverage change: {e}")
 
-    def _recalculate_auto_qty(self, tab_data):
-        """Перераховує qty під поточну монету згідно з Auto Calculation налаштуваннями."""
-        if not tab_data.get("auto_balance_pct") or not tab_data.get("auto_leverage_calc"):
-            return
+    # def _recalculate_auto_qty(self, tab_data):
+    #     """Перераховує qty під поточну монету згідно з Auto Calculation налаштуваннями."""
+    #     if not tab_data.get("auto_balance_pct") or not tab_data.get("auto_leverage_calc"):
+    #         return
 
-        try:
-            balance = get_account_balance(tab_data["session"], tab_data["exchange"])
-            price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
+    #     try:
+    #         balance = get_account_balance(tab_data["session"], tab_data["exchange"])
+    #         price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
 
-            if not balance or not price or price <= 0:
-                print("Cannot recalculate qty - no balance or price")
-                return
+    #         if not balance or not price or price <= 0:
+    #             print("Cannot recalculate qty - no balance or price")
+    #             return
 
-            # Основна формула з Auto Calculation
-            raw_qty = (balance * (tab_data["auto_balance_pct"] / 100.0) * tab_data["auto_leverage_calc"]) / price
+    #         # Основна формула з Auto Calculation
+    #         raw_qty = (balance * (tab_data["auto_balance_pct"] / 100.0) * tab_data["auto_leverage_calc"]) / price
 
-            # Округлення під qtyStep монети (використовуємо функцію, яку ми додавали раніше)
-            qty_step = get_qty_step(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
-            rounded_qty = self._round_qty(raw_qty, qty_step)   # вже є в твоєму коді
+    #         # Округлення під qtyStep монети (використовуємо функцію, яку ми додавали раніше)
+    #         qty_step = get_qty_step(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
+    #         rounded_qty = self._round_qty(raw_qty, qty_step)   # вже є в твоєму коді
 
-            # Оновлюємо
-            tab_data["qty"] = rounded_qty
-            if "qty_spinbox" in tab_data:
-                tab_data["qty_spinbox"].setValue(rounded_qty)
+    #         # Оновлюємо
+    #         tab_data["qty"] = rounded_qty
+    #         if "qty_spinbox" in tab_data:
+    #             tab_data["qty_spinbox"].setValue(rounded_qty)
 
-            self._update_volume_label(tab_data)
-            self._save()
+    #         self._update_volume_label(tab_data)
+    #         self._save()
 
-            print(f"Auto-recalculated qty for {tab_data['selected_symbol']}: {rounded_qty} "
-                  f"(balance {balance:.2f}, price {price:.6f}, leverage {tab_data['auto_leverage_calc']})")
+    #         print(f"Auto-recalculated qty for {tab_data['selected_symbol']}: {rounded_qty} "
+    #               f"(balance {balance:.2f}, price {price:.6f}, leverage {tab_data['auto_leverage_calc']})")
 
-        except Exception as e:
-            print(f"Error recalculating auto qty: {e}")
+    #     except Exception as e:
+    #         print(f"Error recalculating auto qty: {e}")
 
 
 
@@ -1521,21 +1521,21 @@ class FundingTraderApp(QMainWindow):
             return
         tab_data["stop_loss_percentage"] = value
         self._save()
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_stop_loss_enabled_changed(self, tab_data, state):
         if tab_data not in self.tab_data_list:
             return
         tab_data["stop_loss_enabled"] = state == Qt.CheckState.Checked.value
         self._save()
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     def _on_reverse_side_changed(self, tab_data, state):
         if tab_data not in self.tab_data_list:
             return
         tab_data["reverse_side"] = state == Qt.CheckState.Checked.value
         self._save()
-        self._recalculate_auto_qty(tab_data)
+        # self._recalculate_auto_qty(tab_data)
 
     # ------------------------------------------------------------------ #
     #  Локалізація                                                        #
