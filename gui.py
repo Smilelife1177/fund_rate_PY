@@ -321,6 +321,7 @@ class FundingTraderApp(QMainWindow):
         self._add_auto_limit_ui(left_l, tab_data)
         self._add_leverage_ui(left_l, tab_data)
         self._add_stop_loss_ui(left_l, tab_data)
+        self._add_stop_addon_ui(left_l, tab_data)
         self._add_reverse_side_ui(left_l, tab_data)
         self._add_info_labels(left_l, tab_data)
         self._add_action_buttons(left_l, tab_data)
@@ -479,6 +480,23 @@ class FundingTraderApp(QMainWindow):
         tab_data["stop_loss_enabled_checkbox"] = en_cb
         tab_data["stop_loss_percentage_label"] = pct_label
         tab_data["stop_loss_percentage_spinbox"] = pct_spin
+
+    def _add_stop_addon_ui(self, layout, tab_data):
+        label = QLabel(self.trans["stop_addon_label"])
+        spin = QDoubleSpinBox()
+        spin.setRange(0.1, 10.0)
+        spin.setSingleStep(0.1)
+        spin.setDecimals(2)
+        spin.setValue(tab_data.get("stop_addon_pct", 0.5))
+        spin.valueChanged.connect(
+            lambda v: (tab_data.update({"stop_addon_pct": v}), self._save())
+        )
+        layout.addWidget(label)
+        layout.addWidget(spin)
+        tab_data["stop_addon_pct_label"] = label
+        # tab_data["stop_addon_pct_label"] = label
+        tab_data["stop_addon_pct_spin"]  = spin
+
 
     def _add_reverse_side_ui(self, layout, tab_data):
         label = QLabel(self.trans["reverse_side_label"])
@@ -1105,16 +1123,23 @@ class FundingTraderApp(QMainWindow):
         tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
         decimal_places = abs(int(math.log10(tick_size))) if tick_size else 4
 
-        # ── Break-even ліміт-ордер по ціні входу ─────────────────────
-        breakeven_price = round(entry_price, decimal_places)
+        # ── Stop ордер вище входу ─────────────────────────────────────
+        stop_addon_pct = tab_data.get("stop_addon_pct", 0.5)  # % вище входу
+        stop_price = entry_price * (
+            1 + stop_addon_pct / 100 if side == "Sell"  # шорт — стоп вище
+            else 1 - stop_addon_pct / 100               # лонг — стоп нижче
+        )
+        stop_price = round(stop_price, decimal_places)
+
         QTimer.singleShot(
             2000,
-            lambda: place_limit_close_order(
+            lambda sp=stop_price: place_limit_close_order(
                 tab_data["session"], symbol, side,
-                tab_data["qty"], breakeven_price, tick_size,
+                tab_data["qty"], sp, tick_size,
                 tab_data["exchange"]
             )
         )
+        print(f"Stop limit order at {stop_price} (+{stop_addon_pct}% from entry)")
 #
         # ── Profit ліміт-ордер ────────────────────────────────────────
         if side == "Buy":
@@ -1539,6 +1564,7 @@ class FundingTraderApp(QMainWindow):
             "auto_profit_addon_label": t["auto_profit_addon_label"],
             "auto_balance_pct_label":  t["auto_balance_pct_label"],
             "auto_leverage_calc_label": t["auto_leverage_calc_label"],
+            "stop_addon_pct_label": t["stop_addon_label"],
         }
         for key, text in mappings.items():
             if key in tab_data:
