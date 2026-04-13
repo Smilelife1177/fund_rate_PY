@@ -12,4 +12,6 @@ venv
 .vscode
 settings.json
 funding_rates.csv
-change.txt
+change.
+
+test_stats_import.py
