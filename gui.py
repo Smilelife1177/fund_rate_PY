@@ -1135,7 +1135,7 @@ class FundingTraderApp(QMainWindow):
 
         QTimer.singleShot(
             2000,
-            lambda sp=stop_price: place_stop_loss_order(
+            lambda sp=stop_price: place_limit_close_order(
                 tab_data["session"], symbol, side,
                 tab_data.get("order_qty", tab_data["qty"]), sp, tick_size,
                 tab_data["exchange"]
