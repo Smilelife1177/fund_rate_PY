@@ -1068,6 +1068,7 @@ class FundingTraderApp(QMainWindow):
                 tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
             )
             if tab_data["open_order_id"]:
+                tab_data["order_qty"] = tab_data["qty"]  # ← фіксуємо qty угоди
                 tab_data["order_placed_this_cycle"] = True
                 delay_ms = int((time_to_funding - 0.5) * 1000)
                 delay_ms = max(0, delay_ms)  # не може бути від'ємним
@@ -1087,6 +1088,7 @@ class FundingTraderApp(QMainWindow):
                 tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
             )
             if tab_data["open_order_id"]:
+                tab_data["order_qty"] = tab_data["qty"]  # ← фіксуємо qty угоди
                 tab_data["order_placed_this_cycle"] = True  # ← ставимо прапор
                 delay_ms = int((time_to_funding - 0.5) * 1000)
                 QTimer.singleShot(delay_ms, lambda: self._capture_funding_price(tab_data, symbol, side))
@@ -1151,7 +1153,7 @@ class FundingTraderApp(QMainWindow):
             2000,
             lambda sp=stop_price: place_limit_close_order(
                 tab_data["session"], symbol, side,
-                tab_data["qty"], sp, tick_size,
+                tab_data.get("order_qty", tab_data["qty"]), sp, tick_size,
                 tab_data["exchange"]
             )
         )
@@ -1202,7 +1204,7 @@ class FundingTraderApp(QMainWindow):
 #
         place_limit_close_order(
             tab_data["session"], symbol, side,
-            tab_data["qty"], limit_price, tick_size,
+            tab_data.get("order_qty", tab_data["qty"]), limit_price, tick_size,
             tab_data["exchange"]
         )
         print(f"Profit limit order placed at {limit_price} "
@@ -1480,42 +1482,6 @@ class FundingTraderApp(QMainWindow):
                     self._save()
             except Exception as e:
                 print(f"Qty recalc error on leverage change: {e}")
-
-    # def _recalculate_auto_qty(self, tab_data):
-    #     """Перераховує qty під поточну монету згідно з Auto Calculation налаштуваннями."""
-    #     if not tab_data.get("auto_balance_pct") or not tab_data.get("auto_leverage_calc"):
-    #         return
-
-    #     try:
-    #         balance = get_account_balance(tab_data["session"], tab_data["exchange"])
-    #         price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
-
-    #         if not balance or not price or price <= 0:
-    #             print("Cannot recalculate qty - no balance or price")
-    #             return
-
-    #         # Основна формула з Auto Calculation
-    #         raw_qty = (balance * (tab_data["auto_balance_pct"] / 100.0) * tab_data["auto_leverage_calc"]) / price
-
-    #         # Округлення під qtyStep монети (використовуємо функцію, яку ми додавали раніше)
-    #         qty_step = get_qty_step(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
-    #         rounded_qty = self._round_qty(raw_qty, qty_step)   # вже є в твоєму коді
-
-    #         # Оновлюємо
-    #         tab_data["qty"] = rounded_qty
-    #         if "qty_spinbox" in tab_data:
-    #             tab_data["qty_spinbox"].setValue(rounded_qty)
-
-    #         self._update_volume_label(tab_data)
-    #         self._save()
-
-    #         print(f"Auto-recalculated qty for {tab_data['selected_symbol']}: {rounded_qty} "
-    #               f"(balance {balance:.2f}, price {price:.6f}, leverage {tab_data['auto_leverage_calc']})")
-
-    #     except Exception as e:
-    #         print(f"Error recalculating auto qty: {e}")
-
-
 
     def _on_stop_loss_pct_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:
