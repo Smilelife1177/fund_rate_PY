@@ -1077,23 +1077,7 @@ class FundingTraderApp(QMainWindow):
 
         if time_to_funding <= 10:
             print(f"[COUNTDOWN] {symbol} time_to_funding={time_to_funding:.3f}s entry_window={tab_data['entry_time_seconds']}s order_id={tab_data['open_order_id']}")
-
-
-        # if entry_window - 1.0 <= time_to_funding <= entry_window and not tab_data["open_order_id"]:
-            side = (
-                ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"]
-                else ("Buy" if rate > 0 else "Sell")
-            )
-            tab_data["open_order_id"] = place_market_order(
-                tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
-            )
-            if tab_data["open_order_id"]:
-                tab_data["order_qty"] = tab_data["qty"]  # ← фіксуємо qty угоди
-                tab_data["order_placed_this_cycle"] = True  # ← ставимо прапор
-                delay_ms = int((time_to_funding - 0.5) * 1000)
-                QTimer.singleShot(delay_ms, lambda: self._capture_funding_price(tab_data, symbol, side))
-            tab_data["pre_funding_price"] = None
-
+            
         tab_data["update_count"] += 1
         if tab_data.get("position_open") and tab_data["update_count"] % 10 == 0:
             self._check_position_status(tab_data)
