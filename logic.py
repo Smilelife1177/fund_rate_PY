@@ -154,7 +154,7 @@ def place_stop_loss_order(session, symbol, side, qty, stop_price, tick_size, exc
                 orderType="Market",
                 qty=str(qty),
                 stopPrice=str(stop_price),
-                triggerDirection=1 if side == "Buy" else 2,
+                triggerDirection=1 if side == "Sell" else 2,
                 timeInForce="GTC",
                 reduceOnly=True
             )
