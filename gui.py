@@ -1126,22 +1126,22 @@ class FundingTraderApp(QMainWindow):
         decimal_places = abs(int(math.log10(tick_size))) if tick_size else 4
 
         # ── Stop ордер вище входу ─────────────────────────────────────
-        stop_addon_pct = tab_data.get("stop_addon_pct", 0.5)  # % вище входу
-        stop_price = entry_price * (
-            1 + stop_addon_pct / 100 if side == "Sell"  # шорт — стоп вище
-            else 1 - stop_addon_pct / 100               # лонг — стоп нижче
-        )
-        stop_price = round(stop_price, decimal_places)
+        # stop_addon_pct = tab_data.get("stop_addon_pct", 0.5)  # % вище входу
+        # stop_price = entry_price * (
+        #     1 + stop_addon_pct / 100 if side == "Sell"  # шорт — стоп вище
+        #     else 1 - stop_addon_pct / 100               # лонг — стоп нижче
+        # )
+        # stop_price = round(stop_price, decimal_places)
 
-        QTimer.singleShot(
-            2000,
-            lambda sp=stop_price: place_limit_close_order(
-                tab_data["session"], symbol, side,
-                tab_data.get("order_qty", tab_data["qty"]), sp, tick_size,
-                tab_data["exchange"]
-            )
-        )
-        print(f"Stop limit order at {stop_price} (+{stop_addon_pct}% from entry)")
+        # QTimer.singleShot(
+        #     2000,
+        #     lambda sp=stop_price: place_limit_close_order(
+        #         tab_data["session"], symbol, side,
+        #         tab_data.get("order_qty", tab_data["qty"]), sp, tick_size,
+        #         tab_data["exchange"]
+        #     )
+        # )
+        # print(f"Stop limit order at {stop_price} (+{stop_addon_pct}% from entry)")
 #
         # ── Profit ліміт-ордер ────────────────────────────────────────
         if side == "Buy":
