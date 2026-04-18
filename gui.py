@@ -234,7 +234,7 @@ class FundingTraderApp(QMainWindow):
         layout.addWidget(QLabel("Кількість останніх угод для імпорту:"))
         spin = QSpinBox()
         spin.setRange(1, 200)
-        spin.setValue(20)
+        spin.setValue(1)
         layout.addWidget(spin)
 
         # Вибір вкладки (біржі)

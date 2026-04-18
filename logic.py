@@ -519,16 +519,17 @@ def get_qty_step(session, symbol, exchange):
         return None
 
 def get_closed_trades(session, exchange, limit=50):
-    """Імпорт угод з Bybit з правильним розрахунком 'Процент' за варіантом №2."""
+    """Імпорт угод з Bybit з правильним розрахунком Фандингу та Проценту."""
     try:
         if exchange == "Bybit":
+            # 1. Отримуємо закриті позиції
             pnl_resp = session.get_closed_pnl(category="linear", limit=limit)
             if pnl_resp["retCode"] != 0:
                 print(f"Error fetching closed pnl: {pnl_resp['retMsg']}")
                 return []
 
-            # Лог для комісії та фандингу
-            log_resp = session.get_transaction_log(category="linear", limit=500)
+            # 2. Отримуємо логи транзакцій (для комісії та фандингу)
+            log_resp = session.get_transaction_log(category="linear", limit=800)
             log_entries = log_resp["result"]["list"] if log_resp.get("retCode") == 0 else []
 
             trades = []
@@ -537,13 +538,12 @@ def get_closed_trades(session, exchange, limit=50):
                 qty          = float(pos.get("qty", 0))
                 entry_price  = float(pos.get("avgEntryPrice", 0))
                 exit_price   = float(pos.get("avgExitPrice", 0))
-                closed_pnl   = float(pos.get("closedPnl", 0))
+                closed_pnl   = float(pos.get("closedPnl", 0))      # Прибиль (PnL)
                 created_ms   = int(pos.get("createdTime", 0))
                 updated_ms   = int(pos.get("updatedTime", 0))
+                side         = pos.get("side", "Buy")
 
-                side = pos.get("side", "Buy")   # "Buy" або "Sell"
-
-                # === ПРОЦЕНТ №2 — той, який тобі підходить ===
+                # === ПРОЦЕНТ (залишаємо варіант №2 — тобі підходить) ===
                 if entry_price > 0:
                     profit_pct = ((exit_price - entry_price) / entry_price) * 100
                     if side == "Sell":
@@ -552,7 +552,7 @@ def get_closed_trades(session, exchange, limit=50):
                 else:
                     profit_pct = 0.0
 
-                # Тривалість угоди (В-сделке) — покращена версія
+                # === Тривалість угоди ===
                 duration_sec = (updated_ms - created_ms) / 1000.0
                 if duration_sec < 5.0:
                     try:
@@ -576,9 +576,8 @@ def get_closed_trades(session, exchange, limit=50):
                 trade_time = datetime.fromtimestamp(created_ms / 1000).strftime("%Y-%m-%d %H:%M")
                 volume = round(qty * entry_price, 2)
 
-                # Комісія та Фандинг
+                # === КОМІСІЯ ===
                 commission = 0.0
-                funding = 0.0
                 for entry in log_entries:
                     if entry.get("symbol") != symbol:
                         continue
@@ -587,19 +586,44 @@ def get_closed_trades(session, exchange, limit=50):
                         continue
                     if entry.get("type") == "TRADE":
                         commission += abs(float(entry.get("fee", 0)))
-                    elif entry.get("type") == "SETTLEMENT":
+
+                # === ФАНДИНГ ===
+                funding = 0.0
+                settlement_found = False
+
+                for entry in log_entries:
+                    if entry.get("symbol") != symbol:
+                        continue
+                    entry_ms = int(entry.get("transactionTime", 0))
+                    if not (created_ms - 90000 <= entry_ms <= updated_ms + 90000):   # ±1.5 хв
+                        continue
+                    if entry.get("type") == "SETTLEMENT":
                         funding += float(entry.get("cashFlow", 0))
+                        settlement_found = True
 
-                gross_income = closed_pnl + commission + funding
+                # Якщо SETTLEMENT не знайдено (короткі угоди) — використовуємо Residual метод
+                if not settlement_found or abs(funding) < 0.0001:
+                    if side == "Buy":
+                        price_pnl = qty * (exit_price - entry_price)
+                    else:
+                        price_pnl = qty * (entry_price - exit_price)
+                    
+                    # Funding = closed_pnl - price_pnl + commission
+                    funding = round(closed_pnl - price_pnl + commission, 4)
 
+                # === ДОХОД ===
+                # Доход = Прибиль + Фандинг  (комісія вже врахована в closed_pnl)
+                income = round(closed_pnl + funding, 4)
+
+                # Форматування для CSV
                 trades.append({
                     "datetime":   trade_time,
-                    "profit_pct": f"{profit_pct:.2f}%",           # ← Без знаку +, тільки число і %
-                    "funding":    f"{round(funding, 2):.2f}",
-                    "pnl":        f"{round(closed_pnl, 3):.3f}",
-                    "income":     f"{round(gross_income, 2):.2f}",
-                    "commission": f"{round(commission, 2):.2f}",
-                    "volume":     f"{volume:.2f}",
+                    "profit_pct": f"{profit_pct:.2f}%",        # Без знаку +, як ти просив раніше
+                    "funding":    round(funding, 4),           # Зберігаємо з 4 знаками для точності
+                    "pnl":        round(closed_pnl, 4),
+                    "income":     income,
+                    "commission": round(commission, 4),
+                    "volume":     volume,
                     "in_trade":   in_trade,
                     "symbol":     symbol,
                 })
