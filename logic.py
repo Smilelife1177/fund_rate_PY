@@ -519,17 +519,15 @@ def get_qty_step(session, symbol, exchange):
         return None
 
 def get_closed_trades(session, exchange, limit=50):
-    """Імпорт угод з Bybit з правильним розрахунком Проценту, Фандингу та Комісії (openFee + closeFee)."""
+    """Імпорт угод з Bybit з розширеними даними (більше стовпчиків)"""
     try:
         if exchange == "Bybit":
-            # Отримуємо закриті PnL
             pnl_resp = session.get_closed_pnl(category="linear", limit=limit)
             if pnl_resp["retCode"] != 0:
                 print(f"Error fetching closed pnl: {pnl_resp['retMsg']}")
                 return []
 
-            # Логи для фандингу (SETTLEMENT)
-            log_resp = session.get_transaction_log(category="linear", limit=600)
+            log_resp = session.get_transaction_log(category="linear", limit=800)
             log_entries = log_resp["result"]["list"] if log_resp.get("retCode") == 0 else []
 
             trades = []
@@ -543,12 +541,11 @@ def get_closed_trades(session, exchange, limit=50):
                 updated_ms   = int(pos.get("updatedTime", 0))
                 side         = pos.get("side", "Buy")
 
-                # === КОМІСІЯ — твій вибір (openFee + closeFee) ===
                 open_fee     = float(pos.get("openFee", 0))
                 close_fee    = float(pos.get("closeFee", 0))
                 commission   = open_fee + close_fee
 
-                # === ПРОЦЕНТ (варіант №2 — той, який тобі подобається) ===
+                # === ПРОЦЕНТ (варіант №2) ===
                 if entry_price > 0:
                     profit_pct = ((exit_price - entry_price) / entry_price) * 100
                     if side == "Sell":
@@ -557,30 +554,34 @@ def get_closed_trades(session, exchange, limit=50):
                 else:
                     profit_pct = 0.0
 
+                # === PRICE PnL (тільки від ціни) ===
+                if side == "Buy":
+                    price_pnl = qty * (exit_price - entry_price)
+                else:
+                    price_pnl = qty * (entry_price - exit_price)
+                price_pnl = round(price_pnl, 4)
+
                 # === ФАНДИНГ ===
                 funding = 0.0
+                funding_method = "SETTLEMENT"
+
                 for entry in log_entries:
                     if entry.get("symbol") != symbol:
                         continue
                     entry_ms = int(entry.get("transactionTime", 0))
-                    # Вікно ±90 секунд (достатньо для коротких угод)
-                    if not (created_ms - 90000 <= entry_ms <= updated_ms + 90000):
+                    if not (created_ms - 120000 <= entry_ms <= updated_ms + 120000):
                         continue
                     if entry.get("type") == "SETTLEMENT":
                         funding += float(entry.get("cashFlow", 0))
 
-                # Якщо SETTLEMENT не знайдено (дуже короткі угоди) — residual метод
                 if abs(funding) < 0.0001:
-                    if side == "Buy":
-                        price_pnl = qty * (exit_price - entry_price)
-                    else:
-                        price_pnl = qty * (entry_price - exit_price)
                     funding = round(closed_pnl - price_pnl + commission, 4)
+                    funding_method = "RESIDUAL"
 
                 # === ДОХОД ===
                 income = round(closed_pnl + funding, 4)
 
-                # === Тривалість угоди ===
+                # === Тривалість ===
                 duration_sec = (updated_ms - created_ms) / 1000.0
                 if duration_sec < 1:
                     in_trade = "0с"
@@ -590,18 +591,25 @@ def get_closed_trades(session, exchange, limit=50):
                     in_trade = f"{int(duration_sec // 60)}хв"
 
                 trade_time = datetime.fromtimestamp(created_ms / 1000).strftime("%Y-%m-%d %H:%M")
-                volume = round(qty * entry_price, 2)
 
                 trades.append({
-                    "datetime":   trade_time,
-                    "profit_pct": f"{profit_pct:.2f}%",      # Без знаку +
-                    "funding":    round(funding, 4),
-                    "pnl":        round(closed_pnl, 4),
-                    "income":     income,
-                    "commission": round(commission, 4),
-                    "volume":     volume,
-                    "in_trade":   in_trade,
-                    "symbol":     symbol,
+                    "datetime":        trade_time,
+                    "profit_pct":      f"{profit_pct:.2f}%",
+                    "funding":         round(funding, 4),
+                    "pnl":             round(closed_pnl, 4),
+                    "income":          income,
+                    "commission":      round(commission, 4),
+                    "volume":          round(qty * entry_price, 2),
+                    "in_trade":        in_trade,
+                    "symbol":          symbol,
+                    
+                    # === НОВІ СТОВПЧИКИ ===
+                    "open_fee":        round(open_fee, 4),
+                    "close_fee":       round(close_fee, 4),
+                    "total_commission": round(commission, 4),
+                    "price_pnl":       price_pnl,
+                    "funding_method":  funding_method,
+                    "duration_sec":    round(duration_sec, 1),
                 })
 
             return trades

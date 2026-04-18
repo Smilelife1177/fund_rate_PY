@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 STATS_CSV_FILE = "trade_stats.csv"
-STATS_HEADERS = ["Дата_Час", "Процент", "Фандинг", "Прибиль", "Доход", "Комисия", "Обєм", "В-сделке", "Тикер"]
+STATS_HEADERS = ["Дата_Час", "Процент", "Фандинг", "Прибиль", "Доход", "Комисия", "Обєм", "В-сделке", "Тикер", "openFee", "closeFee", "totalCommission", "pricePnL", "fundingMethod", "durationSec"]
 
 
 def initialize_stats_csv(filepath: str = STATS_CSV_FILE):
@@ -48,13 +48,11 @@ def read_stats_csv(filepath: str = STATS_CSV_FILE) -> list[list[str]]:
 
 def write_imported_trades(trades: list[dict], filepath: str = STATS_CSV_FILE) -> int:
     """
-    Записує імпортовані угоди в CSV.
-    Повертає кількість записаних рядків (пропускає дублікати по Дата_Час+Тикер).
+    Записує імпортовані угоди в CSV з розширеними полями.
     """
     existing = read_stats_csv(filepath)
-    # Збираємо ключі існуючих записів щоб не дублювати
     existing_keys = set()
-    for row in existing[1:]:  # пропускаємо заголовок
+    for row in existing[1:]:
         if len(row) >= 9:
             existing_keys.add((row[0], row[8]))  # Дата_Час + Тикер
 
@@ -65,6 +63,7 @@ def write_imported_trades(trades: list[dict], filepath: str = STATS_CSV_FILE) ->
             key = (t["datetime"], t["symbol"])
             if key in existing_keys:
                 continue
+
             writer.writerow([
                 t["datetime"],
                 t["profit_pct"],
@@ -75,6 +74,13 @@ def write_imported_trades(trades: list[dict], filepath: str = STATS_CSV_FILE) ->
                 t["volume"],
                 t["in_trade"],
                 t["symbol"],
+                # Нові поля
+                t.get("open_fee", 0),
+                t.get("close_fee", 0),
+                t.get("total_commission", 0),
+                t.get("price_pnl", 0),
+                t.get("funding_method", ""),
+                t.get("duration_sec", 0),
             ])
             existing_keys.add(key)
             written += 1
