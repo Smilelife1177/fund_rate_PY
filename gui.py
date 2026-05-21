@@ -516,6 +516,7 @@ class FundingTraderApp(QMainWindow):
             "balance_label":      self.trans["balance_label"],
             "leveraged_balance_label": self.trans["leveraged_balance_label"],
             "volume_label":       self.trans["volume_label"],
+            "predicted_profit_label": self.trans["predicted_profit_label"],
             "ping_label":         self.trans["ping_label"],
         }
         for key, text in fields.items():
@@ -1274,6 +1275,7 @@ class FundingTraderApp(QMainWindow):
                 else:
                     self._reset_tab_labels(tab_data)
                 self._update_volume_label(tab_data)
+                self._update_predicted_profit(tab_data)
                 self._update_ping(tab_data)
                 self._refresh_web_view(tab_data)
                 return
@@ -1297,6 +1299,47 @@ class FundingTraderApp(QMainWindow):
         else:
             tab_data["volume_label"].setText(self.trans["volume_label"])
             tab_data["volume_label"].setStyleSheet("color: black;")
+
+    def _update_predicted_profit(self, tab_data):
+        if tab_data not in self.tab_data_list:
+            return
+        try:
+            price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
+            qty = tab_data.get("qty", 0)
+            profit_pct = tab_data.get("profit_percentage", 0)
+            
+            funding_rate = 0.0
+            if tab_data.get("funding_data"):
+                funding_rate = tab_data["funding_data"]["funding_rate"]
+            
+            if price and qty:
+                pos_value = qty * price
+                
+                # Прибуток від цінового руху (ліміт-ордер)
+                price_profit = pos_value * (profit_pct / 100.0)
+                
+                # Фандинг (залежить від reverse_side)
+                # Якщо reverse_side=True, ми отримуємо фандинг. Якщо False - платимо.
+                is_earning = tab_data.get("reverse_side", False)
+                funding_pnl = (1 if is_earning else -1) * abs(funding_rate / 100.0) * pos_value
+                
+                # Комісія (орієнтовно 0.06% маркет + 0.02% ліміт = 0.08% від позиції)
+                commissions = pos_value * 0.0008
+                
+                predicted_net_profit = price_profit + funding_pnl - commissions
+                
+                label_text = f"{self.trans['predicted_profit_label'].split(':')[0]}: ${predicted_net_profit:.4f} USDT"
+                tab_data["predicted_profit_label"].setText(label_text)
+                
+                color = "#008000" if predicted_net_profit > 0 else "#cc0000"
+                tab_data["predicted_profit_label"].setStyleSheet(f"color: {color}; font-weight: bold;")
+            else:
+                tab_data["predicted_profit_label"].setText(self.trans["predicted_profit_label"])
+                tab_data["predicted_profit_label"].setStyleSheet("color: black;")
+        except Exception as e:
+            print(f"Error calculating predicted profit: {e}")
+            tab_data["predicted_profit_label"].setText(self.trans["predicted_profit_label"])
+
 
     def _update_leveraged_balance(self, tab_data):
         if tab_data not in self.tab_data_list:
@@ -1323,6 +1366,8 @@ class FundingTraderApp(QMainWindow):
         tab_data["leveraged_balance_label"].setText(t["leveraged_balance_label"])
         tab_data["volume_label"].setText(t["volume_label"])
         tab_data["volume_label"].setStyleSheet("color: black;")
+        tab_data["predicted_profit_label"].setText(t["predicted_profit_label"])
+        tab_data["predicted_profit_label"].setStyleSheet("color: black;")
         tab_data["ping_label"].setText(t["ping_label"])
         tab_data["ping_label"].setStyleSheet("color: black;")
 
@@ -1338,6 +1383,8 @@ class FundingTraderApp(QMainWindow):
         tab_data["leveraged_balance_label"].setText(_err("leveraged_balance_label"))
         tab_data["volume_label"].setText(_err("volume_label"))
         tab_data["volume_label"].setStyleSheet("color: black;")
+        tab_data["predicted_profit_label"].setText(_err("predicted_profit_label"))
+        tab_data["predicted_profit_label"].setStyleSheet("color: black;")
         tab_data["ping_label"].setText(_err("ping_label"))
         tab_data["ping_label"].setStyleSheet("color: red;")
 
@@ -1410,6 +1457,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["qty"] = value
         self._save()
         self._update_volume_label(tab_data)
+        self._update_predicted_profit(tab_data)
         # self._recalculate_auto_qty(tab_data)
 
     def _on_profit_pct_changed(self, tab_data, value):
@@ -1418,6 +1466,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["profit_percentage"] = value
         tab_data["profit_percentage_slider"].setValue(int(value * 100))
         self._save()
+        self._update_predicted_profit(tab_data)
         # self._recalculate_auto_qty(tab_data)
 
     def _on_profit_slider_changed(self, tab_data, value):
@@ -1426,6 +1475,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["profit_percentage"] = value / 100.0
         tab_data["profit_percentage_spinbox"].setValue(tab_data["profit_percentage"])
         self._save()
+        self._update_predicted_profit(tab_data)
         # self._recalculate_auto_qty(tab_data)
 
     def _on_auto_limit_changed(self, tab_data, state):
@@ -1441,6 +1491,7 @@ class FundingTraderApp(QMainWindow):
         tab_data["leverage"] = value
         self._save()
         self._update_leveraged_balance(tab_data)
+        self._update_predicted_profit(tab_data)
         # self._recalculate_auto_qty(tab_data)
 
         symbol = tab_data.get("selected_symbol")
@@ -1486,6 +1537,7 @@ class FundingTraderApp(QMainWindow):
             return
         tab_data["reverse_side"] = state == Qt.CheckState.Checked.value
         self._save()
+        self._update_predicted_profit(tab_data)
         # self._recalculate_auto_qty(tab_data)
 
     # ------------------------------------------------------------------ #
