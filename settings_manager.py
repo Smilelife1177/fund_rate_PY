@@ -24,7 +24,6 @@ DEFAULT_TAB_SETTINGS = {
     "auto_min_funding": 0.05,
     "auto_profit_addon": 0.3,
     "auto_balance_pct": 30.0,
-    "auto_leverage_calc": 10.0,
 }
 
 
@@ -50,7 +49,6 @@ def load_settings(settings_path: str = SETTINGS_PATH) -> list[dict]:
                     # Заповнюємо нові поля, якщо їх немає в старому файлі
                     tab.setdefault("auto_profit_addon", 0.3)
                     tab.setdefault("auto_balance_pct", 30.0)
-                    tab.setdefault("auto_leverage_calc", 10.0)
                     tab.setdefault("reverse_side", False)
                     tab.setdefault("auto_mode", False)
                     tab.setdefault("auto_min_funding", 0.05)
@@ -85,7 +83,6 @@ def save_settings(tab_data_list: list[dict], language: str, settings_path: str =
             # === Зберігаємо Auto Calculation ===
             "auto_profit_addon": td.get("auto_profit_addon", 0.3),
             "auto_balance_pct": td.get("auto_balance_pct", 30.0),
-            "auto_leverage_calc": td.get("auto_leverage_calc", 10.0),
         }
         tabs.append(tab_dict)
 

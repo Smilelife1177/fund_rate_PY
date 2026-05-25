@@ -32,7 +32,6 @@ DEFAULT_TAB_STATE = {
     "auto_eco_mode": False,
     "auto_profit_addon": 0.3,
     "auto_balance_pct": 30.0,
-    "auto_leverage_calc": 10.0,
     "order_placed_this_cycle": False,
     "stop_addon_pct": 0.5,
 }

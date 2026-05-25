@@ -878,24 +878,6 @@ class FundingTraderApp(QMainWindow):
         tab_data["auto_eco_mode_label_widget"] = eco_label
         tab_data["auto_eco_mode_checkbox"] = eco_cb
 
-        # Leverage для розрахунку qty
-        leverage_calc_row = QHBoxLayout()
-        leverage_calc_label = QLabel(t["auto_leverage_calc_label"])
-        tab_data["auto_leverage_calc_label"] = leverage_calc_label
-        leverage_calc_spin = QDoubleSpinBox()
-        leverage_calc_spin.setRange(1.0, 100.0)
-        leverage_calc_spin.setSingleStep(1.0)
-        leverage_calc_spin.setDecimals(1)
-        leverage_calc_spin.setValue(tab_data.get("auto_leverage_calc", 10.0))
-        leverage_calc_spin.valueChanged.connect(
-            lambda v: (tab_data.update({"auto_leverage_calc": v}), self._save())
-        )
-        leverage_calc_row.addWidget(leverage_calc_label)
-        leverage_calc_row.addWidget(leverage_calc_spin)
-        layout.addLayout(leverage_calc_row)
-        tab_data["auto_leverage_calc_spin"] = leverage_calc_spin
-
-#
         layout.addStretch()
 
     def _set_auto_mode(self, tab_data, enabled: bool):
