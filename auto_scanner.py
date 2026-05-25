@@ -56,7 +56,8 @@ def scan_funding_opportunities(
             continue
 
         rate_pct = rate * 100
-        if abs(rate_pct) < threshold_pct:
+        # Фільтруємо: тільки негативні значення та вище порогу
+        if rate_pct >= 0 or abs(rate_pct) < threshold_pct:
             continue
 
         secs_to_funding = (next_ft_ms - now_ms) / 1000.0
