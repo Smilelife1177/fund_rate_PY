@@ -919,11 +919,10 @@ class FundingTraderApp(QMainWindow):
 
             if best:
                 symbol = best["symbol"]
+                # Використовуємо _on_symbol_changed, він сам оновить UI, WebView, збереже та оновить дані
+                self._on_symbol_changed(tab_data, symbol)
                 tab_data["auto_selected_symbol"] = symbol
-                tab_data["selected_symbol"] = symbol
                 tab_data["coin_input"].setText(symbol)
-                self._refresh_web_view(tab_data)
-                self.tab_widget.setTabText(self._tab_widget_index(tab_data), symbol)
 
                 # ── Profit percentage ─────────────────────────────────────
                 funding_rate = abs(best["rate"])
@@ -939,24 +938,23 @@ class FundingTraderApp(QMainWindow):
                         balance  = get_account_balance(tab_data["session"], tab_data["exchange"])
                         price    = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
                         qty_step = get_qty_step(tab_data["session"], symbol, tab_data["exchange"])
-                        funding  = get_funding_data(tab_data["session"], symbol, tab_data["exchange"])
-                        return balance, price, qty_step, funding
+                        return balance, price, qty_step
                     except Exception as e:
                         print(f"Background calc error: {e}")
-                        return None, None, None, None
+                        return None, None, None
 
                 def _apply_results(results):
-                    balance, price, qty_step, funding = results
+                    balance, price, qty_step = results
                     if balance and price and price > 0:
                         balance_pct   = tab_data.get("auto_balance_pct", 30.0) / 100
                         leverage_calc = tab_data.get("leverage", 10.0)
                         qty = self._round_qty((balance * balance_pct * leverage_calc) / price, qty_step)
                         tab_data["qty"] = qty
                         tab_data["qty_spinbox"].setValue(qty)
-                    if funding:
-                        tab_data["funding_data"] = funding
-                        self._update_tab_funding_data(tab_data)
-                    self._save()
+                    # _save вже був викликаний в _on_symbol_changed, тут можна не дублювати
+                    # Оновлюємо лейбли обсягу та профіту
+                    self._update_volume_label(tab_data)
+                    self._update_predicted_profit(tab_data)
 
                 from PyQt6.QtCore import QThreadPool, QRunnable
                 class Worker(QRunnable):
