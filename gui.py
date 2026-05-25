@@ -44,6 +44,16 @@ from auto_scanner import scan_funding_opportunities, format_funding_time
 from tab_data import build_tab_data
 
 # ---------------------------------------------------------------------------
+# Допоміжні класи
+# ---------------------------------------------------------------------------
+
+class SilentWebEnginePage(QWebEnginePage):
+    """Сторінка WebView, яка ігнорує (не виводить у консоль) JS-повідомлення."""
+    def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+        # Порожній метод для придушення виводу в термінал
+        pass
+
+# ---------------------------------------------------------------------------
 # Головне вікно
 # ---------------------------------------------------------------------------
 
@@ -547,7 +557,7 @@ class FundingTraderApp(QMainWindow):
             QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
         )
         view = QWebEngineView()
-        view.setPage(QWebEnginePage(profile, view))
+        view.setPage(SilentWebEnginePage(profile, view))
         view.setMinimumHeight(150)
         tab_data["funding_web_view"] = view
         tab_data["web_profile"] = profile
