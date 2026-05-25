@@ -605,16 +605,42 @@ class FundingTraderApp(QMainWindow):
         secs_into_hour = now.minute * 60 + now.second
         secs_left = 3600 - secs_into_hour
 
-        if secs_left > 60:
-            self._auto_scan_done_this_minute = False
-            return
-
-        if self._auto_scan_done_this_minute:
-            return
-
         # Перевіряємо, чи є хоча б одна вкладка з auto_mode=True
         auto_tabs = [td for td in self.tab_data_list if td.get("auto_mode")]
         if not auto_tabs:
+            return
+
+        # Перевіряємо Eco-режим. Якщо увімкнено хоча б в одного — застосовуємо логіку "сну"
+        is_eco = any(td.get("auto_eco_mode") for td in auto_tabs)
+        
+        # Якщо Eco-режим і до фандингу більше 5 хв (300 сек) — "спимо"
+        if is_eco and secs_left > 300:
+            for td in auto_tabs:
+                if td.get("auto_eco_mode"):
+                    mins = (secs_left - 300) // 60
+                    secs = (secs_left - 300) % 60
+                    td["auto_status_label"].setText(f"🌙 ECO-SLEEP (wake in {mins:02d}:{secs:02d})")
+                    td["auto_status_label"].setStyleSheet("color: #ffffff; background-color: #2c3e50; padding: 5px; border-radius: 4px; font-weight: bold; font-size: 12pt;")
+                    if td.get("funding_web_view"):
+                        td["funding_web_view"].setVisible(False)
+            self._auto_scan_done_this_minute = False
+            return
+
+        # Звичайна логіка сканування за 60 секунд до фандингу
+        if secs_left > 60:
+            self._auto_scan_done_this_minute = False
+            # Відображаємо зворотній відлік
+            for td in auto_tabs:
+                if td.get("funding_web_view") and td["exchange"] == "Bybit":
+                    td["funding_web_view"].setVisible(True)
+                
+                mins = (secs_left - 60) // 60
+                secs = (secs_left - 60) % 60
+                td["auto_status_label"].setText(self.trans["auto_status_countdown"].format(mins=mins, secs=secs))
+                td["auto_status_label"].setStyleSheet("color: #555; font-style: italic; background-color: transparent;")
+            return
+
+        if self._auto_scan_done_this_minute:
             return
 
         self._auto_scan_done_this_minute = True
@@ -629,27 +655,31 @@ class FundingTraderApp(QMainWindow):
             print(f"Global auto scan error: {e}")
             return
 
-        # Роздаємо результати кожній вкладці з auto_mode=True
-        used_symbols = set()
-        # for td in auto_tabs:
-        #     self._apply_scan_result_to_tab(td, all_above, near_now, used_symbols)
-        # СТАЛО:
+        # Роздаємо результати
         self._spawn_tabs_from_scan(near_now)
 
         # Оновити статус у всіх авто-вкладках
         for td in auto_tabs:
             td["auto_scan_results"] = all_above
             self._update_auto_scan_table(td)
+            
+            # Повертаємо видимість WebView при активації
+            if td.get("funding_web_view") and td["exchange"] == "Bybit":
+                td["funding_web_view"].setVisible(True)
+
             if near_now:
                 td["auto_status_label"].setText(
                     self.trans["auto_status_found"].format(n=len(all_above), symbol=near_now[0]["symbol"])
                 )
+                td["auto_status_label"].setStyleSheet("color: #ffffff; background-color: #27ae60; padding: 5px; border-radius: 4px; font-weight: bold;")
             elif all_above:
                 td["auto_status_label"].setText(
                     self.trans["auto_status_watching"].format(n=len(all_above))
                 )
+                td["auto_status_label"].setStyleSheet("color: #27ae60; font-weight: bold; background-color: transparent;")
             else:
                 td["auto_status_label"].setText(self.trans["auto_status_none"])
+                td["auto_status_label"].setStyleSheet("color: #c0392b; font-weight: bold; background-color: transparent;")
     #
 
     def _spawn_tabs_from_scan(self, near_now: list):
@@ -823,6 +853,20 @@ class FundingTraderApp(QMainWindow):
         tab_data["auto_calc_group_label"]   = calc_group_label
         tab_data["auto_profit_addon_label"] = profit_addon_label
         tab_data["auto_balance_pct_label"]  = balance_pct_label
+
+        # Eco-Auto Mode
+        eco_row = QHBoxLayout()
+        eco_label = QLabel(t["auto_eco_mode_label"])
+        eco_cb = QCheckBox(t["auto_eco_mode_checkbox"])
+        eco_cb.setChecked(tab_data.get("auto_eco_mode", False))
+        eco_cb.stateChanged.connect(
+            lambda s: (tab_data.update({"auto_eco_mode": s == Qt.CheckState.Checked.value}), self._save())
+        )
+        eco_row.addWidget(eco_label)
+        eco_row.addWidget(eco_cb)
+        layout.addLayout(eco_row)
+        tab_data["auto_eco_mode_label_widget"] = eco_label
+        tab_data["auto_eco_mode_checkbox"] = eco_cb
 
         # Leverage для розрахунку qty
         leverage_calc_row = QHBoxLayout()
@@ -1251,6 +1295,17 @@ class FundingTraderApp(QMainWindow):
         tab_data["order_placed_this_cycle"] = False
         if tab_data not in self.tab_data_list:
             return
+
+        # Eco-Auto Mode optimization
+        if tab_data.get("auto_mode") and tab_data.get("auto_eco_mode"):
+            now = datetime.now(timezone.utc)
+            secs_into_hour = now.minute * 60 + now.second
+            secs_left = 3600 - secs_into_hour
+            if secs_left > 300: # Більше 5 хв до фандингу
+                # Пропускаємо важкі API запити, оновлюємо тільки пінг і UI статус
+                self._update_ping(tab_data)
+                return
+
         for attempt in range(retry_count):
             try:
                 tab_data["funding_data"] = get_funding_data(
