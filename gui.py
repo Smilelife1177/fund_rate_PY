@@ -153,26 +153,7 @@ class FundingTraderApp(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        self.stats_table = QTableWidget()
-        self.stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-
-        # Стиль для таблиці: більший шрифт
-        self.stats_table.setStyleSheet("""
-            QTableWidget {
-                font-size: 14px;
-            }
-            QHeaderView::section {
-                font-size: 14px;
-                font-weight: bold;
-            }
-        """)
-
-        # Розтягування колонок на всю ширину
-        header = self.stats_table.horizontalHeader()
-        header.setSectionResizeMode(header.ResizeMode.Stretch)
-
-        layout.addWidget(self.stats_table)
-
+        # 1. Кнопки тепер ЗВЕРХУ
         btn_row = QHBoxLayout()
         refresh_btn = QPushButton(self.trans["refresh_button"])
         refresh_btn.clicked.connect(self._update_stats_table)
@@ -188,24 +169,63 @@ class FundingTraderApp(QMainWindow):
 
         layout.addLayout(btn_row)
 
+        # 2. Таблиця знизу під кнопками
+        self.stats_table = QTableWidget()
+        self.stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Стиль для таблиці: більший шрифт
+        self.stats_table.setStyleSheet("""
+            QTableWidget {
+                font-size: 14px;
+            }
+            QHeaderView::section {
+                font-size: 14px;
+                font-weight: bold;
+            }
+        """)
+        
+        # Приховати вертикальні заголовки (номери рядків) для чистоти
+        self.stats_table.verticalHeader().setVisible(False)
+
+        # Розтягування колонок на всю ширину (ініціалізація)
+        header = self.stats_table.horizontalHeader()
+        header.setSectionResizeMode(header.ResizeMode.Stretch)
+
+        layout.addWidget(self.stats_table)
+
         idx = self.tab_widget.addTab(tab, "Statistics" if self.language == "en" else "Статистика")
         self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, None)
         self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.LeftSide, None)
 
     def _update_stats_table(self):
+        # Блокуємо сигнали, щоб уникнути помилок dataChanged із невалідними індексами при оновленні
+        self.stats_table.blockSignals(True)
+        
         rows = stats.read_stats_csv()
         if not rows:
-            self.stats_table.clear()
+            self.stats_table.setRowCount(0)
+            self.stats_table.blockSignals(False)
             return
+
         headers, data_rows = rows[0], rows[1:]
-        data_rows = list(reversed(data_rows))  # ← додати
+        data_rows = list(reversed(data_rows))
+        
         self.stats_table.setColumnCount(len(headers))
         self.stats_table.setHorizontalHeaderLabels(headers)
         self.stats_table.setRowCount(len(data_rows))
+        
         for r, row in enumerate(data_rows):
             for c, val in enumerate(row):
-                self.stats_table.setItem(r, c, QTableWidgetItem(val))
-        self.stats_table.resizeColumnsToContents()
+                item = QTableWidgetItem(val)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.stats_table.setItem(r, c, item)
+        
+        # ВАЖЛИВО: Повторно встановлюємо режим Stretch ПІСЛЯ заповнення даних,
+        # щоб колонки не збивалися при імпорті.
+        header = self.stats_table.horizontalHeader()
+        header.setSectionResizeMode(header.ResizeMode.Stretch)
+        
+        self.stats_table.blockSignals(False)
 
     def _open_stats_input_dialog(self):
         dialog = QDialog(self)

@@ -583,12 +583,21 @@ def get_closed_trades(session, exchange, limit=50):
 
                 # === Тривалість ===
                 duration_sec = (updated_ms - created_ms) / 1000.0
-                if duration_sec < 1:
-                    in_trade = "0с"
-                elif duration_sec < 60:
-                    in_trade = f"{int(round(duration_sec))}с"
+                if duration_sec < 0:
+                    duration_sec = 0
+                
+                if duration_sec < 60:
+                    # Якщо менше секунди, але більше 0 — покажемо 1с, щоб не було 0с
+                    display_sec = math.ceil(duration_sec) if duration_sec > 0 else 0
+                    in_trade = f"{int(display_sec)}с"
+                elif duration_sec < 3600:
+                    mins = int(duration_sec // 60)
+                    secs = int(duration_sec % 60)
+                    in_trade = f"{mins}хв {secs}с"
                 else:
-                    in_trade = f"{int(duration_sec // 60)}хв"
+                    hours = int(duration_sec // 3600)
+                    mins = int((duration_sec % 3600) // 60)
+                    in_trade = f"{hours}г {mins}хв"
 
                 trade_time = datetime.fromtimestamp(created_ms / 1000).strftime("%Y-%m-%d %H:%M")
 
