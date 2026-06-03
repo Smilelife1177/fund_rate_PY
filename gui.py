@@ -155,17 +155,17 @@ class FundingTraderApp(QMainWindow):
 
         # 1. Кнопки тепер ЗВЕРХУ
         btn_row = QHBoxLayout()
-        refresh_btn = QPushButton(self.trans["refresh_button"])
-        refresh_btn.clicked.connect(self._update_stats_table)
-        btn_row.addWidget(refresh_btn)
+        self.stats_refresh_btn = QPushButton(self.trans["refresh_button"])
+        self.stats_refresh_btn.clicked.connect(self._update_stats_table)
+        btn_row.addWidget(self.stats_refresh_btn)
 
-        add_btn = QPushButton("Додати угоду вручну")
-        add_btn.clicked.connect(self._open_stats_input_dialog)
-        btn_row.addWidget(add_btn)
+        self.stats_add_manual_btn = QPushButton(self.trans["stats_add_manual_btn"])
+        self.stats_add_manual_btn.clicked.connect(self._open_stats_input_dialog)
+        btn_row.addWidget(self.stats_add_manual_btn)
 
-        import_btn = QPushButton("Імпорт з біржі")
-        import_btn.clicked.connect(self._open_import_dialog)
-        btn_row.addWidget(import_btn)
+        self.stats_import_btn = QPushButton(self.trans["stats_import_btn"])
+        self.stats_import_btn.clicked.connect(self._open_import_dialog)
+        btn_row.addWidget(self.stats_import_btn)
 
         layout.addLayout(btn_row)
 
@@ -193,7 +193,7 @@ class FundingTraderApp(QMainWindow):
 
         layout.addWidget(self.stats_table)
 
-        idx = self.tab_widget.addTab(tab, "Statistics" if self.language == "en" else "Статистика")
+        idx = self.tab_widget.addTab(tab, self.trans["stats_tab_title"])
         self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, None)
         self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.LeftSide, None)
 
@@ -361,7 +361,6 @@ class FundingTraderApp(QMainWindow):
         self._add_exchange_ui(left_l, tab_data)
         self._add_testnet_ui(left_l, tab_data)
         self._add_coin_ui(left_l, tab_data)
-        self._add_funding_interval_ui(left_l, tab_data)
         self._add_entry_time_ui(left_l, tab_data)
         self._add_qty_ui(left_l, tab_data)
         self._add_profit_percentage_ui(left_l, tab_data)
@@ -429,19 +428,6 @@ class FundingTraderApp(QMainWindow):
         tab_data["coin_input_label"] = label
         tab_data["coin_input"] = field
         tab_data["update_coin_button"] = btn
-
-    def _add_funding_interval_ui(self, layout, tab_data):
-        label = QLabel(self.trans["funding_interval_label"])
-        combo = QComboBox()
-        intervals = ["0.01", "1", "4", "8"] if tab_data["exchange"] == "Bybit" else ["8"]
-        combo.addItems(intervals)
-        formatted = str(float(tab_data["funding_interval_hours"])).rstrip(".0")
-        combo.setCurrentText(formatted)
-        combo.currentTextChanged.connect(lambda v: self._on_funding_interval_changed(tab_data, v))
-        layout.addWidget(label)
-        layout.addWidget(combo)
-        tab_data["funding_interval_label"] = label
-        tab_data["funding_interval_combobox"] = combo
 
     def _add_entry_time_ui(self, layout, tab_data):
         label = QLabel(self.trans["entry_time_label"])
@@ -1487,12 +1473,6 @@ class FundingTraderApp(QMainWindow):
         tab_data["exchange"] = exchange
         self._refresh_web_view(tab_data)
         tab_data["funding_interval_hours"] = 1.0 if exchange == "Bybit" else 8.0
-        combo = tab_data["funding_interval_combobox"]
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItems(["0.01", "1", "4", "8"] if exchange == "Bybit" else ["8"])
-        combo.setCurrentText(str(float(tab_data["funding_interval_hours"])).rstrip(".0"))
-        combo.blockSignals(False)
         tab_data["session"] = initialize_client(exchange, tab_data["testnet"])
         self._save()
         self._update_tab_funding_data(tab_data)
@@ -1513,14 +1493,6 @@ class FundingTraderApp(QMainWindow):
         tab_data["selected_symbol"] = symbol.strip().upper()
         self._refresh_web_view(tab_data)
         self.tab_widget.setTabText(self._tab_widget_index(tab_data), tab_data["selected_symbol"])
-        self._save()
-        self._update_tab_funding_data(tab_data)
-        # self._recalculate_auto_qty(tab_data)
-
-    def _on_funding_interval_changed(self, tab_data, value):
-        if tab_data not in self.tab_data_list or not value:
-            return
-        tab_data["funding_interval_hours"] = float(value)
         self._save()
         self._update_tab_funding_data(tab_data)
         # self._recalculate_auto_qty(tab_data)
@@ -1633,11 +1605,22 @@ class FundingTraderApp(QMainWindow):
         for td in self.tab_data_list:
             self._update_tab_labels(td)
             self._update_tab_funding_data(td)
-        self.tab_widget.setTabText(
-            self.tab_widget.count() - 2,
-            "Statistics" if self.language == "en" else "Статистика",
-        )
-        
+
+        # Оновлення вкладки Статистики
+        self.stats_refresh_btn.setText(self.trans["refresh_button"])
+        self.stats_add_manual_btn.setText(self.trans["stats_add_manual_btn"])
+        self.stats_import_btn.setText(self.trans["stats_import_btn"])
+
+        # Знаходимо індекс вкладки статистики (вона зазвичай остання перед +)
+        stats_idx = -1
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(i) in ["Statistics", "Статистика", "Statistics"]: # Перевіряємо старі назви
+                 stats_idx = i
+                 break
+
+        if stats_idx != -1:
+            self.tab_widget.setTabText(stats_idx, self.trans["stats_tab_title"])
+
         self._save()
 
     def _update_tab_labels(self, tab_data):
@@ -1647,7 +1630,6 @@ class FundingTraderApp(QMainWindow):
             "testnet_label":             t["testnet_label"],
             "reverse_side_label":        t["reverse_side_label"],
             "coin_input_label":          t["coin_input_label"],
-            "funding_interval_label":    t["funding_interval_label"],
             "entry_time_label":          t["entry_time_label"],
             "qty_label":                 t["qty_label"],
             "profit_percentage_label":   t["profit_percentage_label"],
@@ -1662,7 +1644,7 @@ class FundingTraderApp(QMainWindow):
             "auto_calc_group_label":   t["auto_calc_group_label"],
             "auto_profit_addon_label": t["auto_profit_addon_label"],
             "auto_balance_pct_label":  t["auto_balance_pct_label"],
-            "auto_leverage_calc_label": t["auto_leverage_calc_label"],
+            "auto_eco_mode_label_widget": t["auto_eco_mode_label"],
             "stop_addon_pct_label": t["stop_addon_label"],
         }
         for key, text in mappings.items():
@@ -1674,6 +1656,7 @@ class FundingTraderApp(QMainWindow):
             "reverse_side_checkbox":      t["reverse_side_checkbox"],
             "auto_limit_checkbox":        t["auto_limit_checkbox"],
             "stop_loss_enabled_checkbox": t["stop_loss_enabled_checkbox"],
+            "auto_eco_mode_checkbox":     t["auto_eco_mode_checkbox"],
         }
         for key, text in checkboxes.items():
             if key in tab_data:
