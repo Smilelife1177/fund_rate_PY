@@ -155,6 +155,22 @@ class FundingTraderApp(QMainWindow):
 
         self.stats_table = QTableWidget()
         self.stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Стиль для таблиці: більший шрифт
+        self.stats_table.setStyleSheet("""
+            QTableWidget {
+                font-size: 14px;
+            }
+            QHeaderView::section {
+                font-size: 14px;
+                font-weight: bold;
+            }
+        """)
+
+        # Розтягування колонок на всю ширину
+        header = self.stats_table.horizontalHeader()
+        header.setSectionResizeMode(header.ResizeMode.Stretch)
+
         layout.addWidget(self.stats_table)
 
         btn_row = QHBoxLayout()
