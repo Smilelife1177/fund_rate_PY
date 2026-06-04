@@ -594,9 +594,9 @@ def get_closed_trades(session, exchange, limit=50):
                 
                 funding = round(funding, 4)
 
-                # === ДОХОД (Фінальний чистий результат) ===
-                # Для Bybit V5 closedPnl вже є фінальним результатом (PnL - Fees - Funding)
-                income = round(closed_pnl, 4)
+                # === ДОХОД ===
+                # Доход розраховується як сума чистого прибутку від ціни та фандингу
+                income = round(closed_pnl - funding + commission, 4)
 
                 # === Тривалість ===
                 duration_sec = (updated_ms - created_ms) / 1000.0
