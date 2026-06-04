@@ -561,25 +561,42 @@ def get_closed_trades(session, exchange, limit=50):
                     price_pnl = qty * (entry_price - exit_price)
                 price_pnl = round(price_pnl, 4)
 
-                # === ФАНДИНГ ===
+                # === ФАНДИНГ (Метод №1: Execution List - Рекомендовано) ===
                 funding = 0.0
-                funding_method = "SETTLEMENT"
+                funding_method = "EXECUTION"
+                try:
+                    # Шукаємо execType=Funding для конкретного символу в межах часу угоди
+                    exec_resp = session.get_executions(
+                        category="linear",
+                        symbol=symbol,
+                        execType="Funding",
+                        startTime=created_ms - 2000,
+                        endTime=updated_ms + 2000
+                    )
+                    if exec_resp.get("retCode") == 0:
+                        for ex in exec_resp["result"]["list"]:
+                            # В Bybit execFee > 0 - це комісія (сплата), < 0 - це дохід.
+                            # Ми інвертуємо, щоб дохід був (+), а сплата (-).
+                            funding -= float(ex.get("execFee", 0))
+                except Exception as e:
+                    print(f"Error fetching funding via executions: {e}")
 
-                for entry in log_entries:
-                    if entry.get("symbol") != symbol:
-                        continue
-                    entry_ms = int(entry.get("transactionTime", 0))
-                    if not (created_ms - 120000 <= entry_ms <= updated_ms + 120000):
-                        continue
-                    if entry.get("type") == "SETTLEMENT":
-                        funding += float(entry.get("cashFlow", 0))
+                # Метод №2: Fallback на Transaction Log (якщо через executions не знайшло)
+                if abs(funding) < 1e-7:
+                    funding_method = "LOGS"
+                    for entry in log_entries:
+                        if entry.get("symbol") != symbol:
+                            continue
+                        t_ms = int(entry.get("transactionTime", 0))
+                        if (created_ms - 5000) <= t_ms <= (updated_ms + 5000):
+                            if entry.get("type") in ["SETTLEMENT", "FUNDING"]:
+                                funding += float(entry.get("cashFlow", 0))
+                
+                funding = round(funding, 4)
 
-                if abs(funding) < 0.0001:
-                    funding = round(closed_pnl - price_pnl + commission, 4)
-                    funding_method = "RESIDUAL"
-
-                # === ДОХОД ===
-                income = round(closed_pnl + funding, 4)
+                # === ДОХОД (Фінальний чистий результат) ===
+                # Для Bybit V5 closedPnl вже є фінальним результатом (PnL - Fees - Funding)
+                income = round(closed_pnl, 4)
 
                 # === Тривалість ===
                 duration_sec = (updated_ms - created_ms) / 1000.0
