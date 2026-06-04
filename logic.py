@@ -550,7 +550,7 @@ def get_closed_trades(session, exchange, limit=50):
                     profit_pct = ((exit_price - entry_price) / entry_price) * 100
                     if side == "Sell":
                         profit_pct = -profit_pct
-                    profit_pct = round(profit_pct, 2)
+                    profit_pct = round(-profit_pct, 2)
                 else:
                     profit_pct = 0.0
 
@@ -559,7 +559,7 @@ def get_closed_trades(session, exchange, limit=50):
                     price_pnl = qty * (exit_price - entry_price)
                 else:
                     price_pnl = qty * (entry_price - exit_price)
-                price_pnl = round(price_pnl, 4)
+                price_pnl = round(-price_pnl, 4)
 
                 # === ФАНДИНГ (Метод №1: Execution List - Рекомендовано) ===
                 funding = 0.0
