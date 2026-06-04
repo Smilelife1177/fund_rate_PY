@@ -35,6 +35,10 @@ Create virtual enviroment to install libraries
 ```
 python3 -m venv venv
 source venv/bin/activate
+
+for windows 
+.venv\Scripts\Activate.ps1
+
 ```
 
 Install the required libraries by running

@@ -26,6 +26,7 @@ from PyQt6.QtCore import QTimer, Qt, QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
+from PyQt6.QtGui import QColor
 
 from logic import (
     get_account_balance, get_funding_data, get_current_price,
@@ -218,6 +219,22 @@ class FundingTraderApp(QMainWindow):
             for c, val in enumerate(row):
                 item = QTableWidgetItem(val)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                
+                # Колір для стовпця "Прибиль" (індекс 3)
+                if c == 3:
+                    try:
+                        # Очищаємо значення від можливих ком (локалізація) та інших символів
+                        clean_val = val.replace(',', '.').replace('%', '').strip()
+                        num_val = float(clean_val)
+                        if num_val > 0:
+                            item.setBackground(QColor(0, 153, 0))
+                            item.setForeground(Qt.GlobalColor.white) # Білий текст на зеленому для кращої читабельності
+                        elif num_val < 0:
+                            item.setBackground(QColor(153, 0, 0))
+                            item.setForeground(Qt.GlobalColor.white) # Білий текст на червоному
+                    except ValueError:
+                        pass
+
                 self.stats_table.setItem(r, c, item)
         
         # ВАЖЛИВО: Повторно встановлюємо режим Stretch ПІСЛЯ заповнення даних,
