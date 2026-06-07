@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 STATS_CSV_FILE = "trade_stats.csv"
-STATS_HEADERS = ["Дата_Час", "Процент", "Фандинг", "Прибиль", "Доход", "Комисия", "Обєм", "В-сделке", "Тикер", "openFee", "closeFee", "totalCommission", "pricePnL", "fundingMethod", "durationSec"]
+STATS_HEADERS = ["Дата_Час", "Процент", "Фандинг", "%_Фандингу", "Прибиль", "Доход", "Комисия", "Обєм", "В-сделке", "Тикер", "openFee", "closeFee", "totalCommission", "pricePnL", "fundingMethod", "durationSec"]
 
 
 def initialize_stats_csv(filepath: str = STATS_CSV_FILE):
@@ -31,11 +31,29 @@ def parse_stats_input(raw: str) -> list[str] | None:
 
 
 def write_stats_row(values: list[str], filepath: str = STATS_CSV_FILE):
-    """Записує рядок угоди в CSV."""
+    """
+    Записує рядок угоди в CSV.
+    values: [Процент, Фандинг, Прибиль, Доход, Комисия, Обєм, В-сделке, Тикер] (8 значень)
+    """
+    try:
+        # values[1] is Фандинг, values[5] is Обєм
+        funding = float(values[1].replace(',', '.').replace('—', '0'))
+        volume = float(values[5].replace(',', '.'))
+        if volume != 0:
+            funding_pct = (funding / volume) * 100
+            funding_pct_str = f"{funding_pct:.4f}%"
+        else:
+            funding_pct_str = "0.0000%"
+    except Exception:
+        funding_pct_str = "0.0000%"
+
+    # Вставляємо %_Фандингу після Фандинг (індекс 1 у вхідному списку values)
+    new_values = values[:2] + [funding_pct_str] + values[2:]
+
     with open(filepath, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-        writer.writerow([current_time] + values)
+        writer.writerow([current_time] + new_values)
 
 
 def read_stats_csv(filepath: str = STATS_CSV_FILE) -> list[list[str]]:
@@ -53,8 +71,8 @@ def write_imported_trades(trades: list[dict], filepath: str = STATS_CSV_FILE) ->
     existing = read_stats_csv(filepath)
     existing_keys = set()
     for row in existing[1:]:
-        if len(row) >= 9:
-            existing_keys.add((row[0], row[8]))  # Дата_Час + Тикер
+        if len(row) >= 10: # Було 9, стало 10 (до Тикер)
+            existing_keys.add((row[0], row[9]))  # Дата_Час + Тикер
 
     written = 0
     with open(filepath, "a", newline="", encoding="utf-8") as f:
@@ -64,10 +82,19 @@ def write_imported_trades(trades: list[dict], filepath: str = STATS_CSV_FILE) ->
             if key in existing_keys:
                 continue
 
+            funding = t["funding"]
+            volume = t["volume"]
+            if volume != 0:
+                funding_pct = (funding / volume) * 100
+                funding_pct_str = f"{funding_pct:.4f}%"
+            else:
+                funding_pct_str = "0.0000%"
+
             writer.writerow([
                 t["datetime"],
                 t["profit_pct"],
                 t["funding"],
+                funding_pct_str, # <--- NEW
                 t["pnl"],
                 t["income"],
                 t["commission"],

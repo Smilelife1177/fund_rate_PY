@@ -220,8 +220,8 @@ class FundingTraderApp(QMainWindow):
                 item = QTableWidgetItem(val)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 
-                # Колір для стовпця "Прибиль" (індекс 3)
-                if c == 3:
+                # Колір для стовпця "Прибиль" (індекс 4 після додавання %_Фандингу)
+                if c == 4:
                     try:
                         # Очищаємо значення від можливих ком (локалізація) та інших символів
                         clean_val = val.replace(',', '.').replace('%', '').strip()
