@@ -1218,18 +1218,16 @@ class FundingTraderApp(QMainWindow):
         # print(f"Stop limit order at {stop_price} (+{stop_addon_pct}% from entry)")
 #
         # ── Profit ліміт-ордер ────────────────────────────────────────
-        if side == "Buy":
-            # Лонг: закриваємо Sell limit вище entry
-            target = entry_price * (1 + tab_data["profit_percentage"] / 100)
-        else:
-            # Шорт: закриваємо Buy limit нижче entry
-            target = entry_price * (1 - tab_data["profit_percentage"] / 100)
+        is_inverted = tab_data.get("reverse_side", False)
+        direction = 1 if is_inverted else -1
+        target = entry_price * (1 + (direction * tab_data["profit_percentage"]) / 100)
 
         # Вибір ціни залежно від режиму
         if tab_data.get("auto_limit", False):
             optimal = get_optimal_limit_price(
                 tab_data["session"], symbol, side, entry_price,
-                tab_data["exchange"], tab_data["profit_percentage"], tick_size
+                tab_data["exchange"], tab_data["profit_percentage"], tick_size,
+                is_inverted=is_inverted
             )
             if optimal:
                 actual_profit = abs((optimal - entry_price) / entry_price * 100)

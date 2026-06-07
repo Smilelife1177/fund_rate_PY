@@ -179,10 +179,10 @@ def place_stop_loss_order(session, symbol, side, qty, stop_price, tick_size, exc
         print(f"Error placing stop-loss order: {e}")
         return None
 
-def get_optimal_limit_price(session, symbol, side, current_price, exchange, profit_percentage, tick_size):
-    """Покращена версія з правильним боком ордербуку."""
+def get_optimal_limit_price(session, symbol, side, current_price, exchange, profit_percentage, tick_size, is_inverted=False):
+    """Покращена версія з правильним боком ордербуку та врахуванням інверсії."""
     try:
-        print(f"Fetching order book for {symbol} to determine optimal limit price...")
+        print(f"Fetching order book for {symbol} to determine optimal limit price (inverted: {is_inverted})...")
 
         if exchange == "Bybit":
             response = session.get_orderbook(category="linear", symbol=symbol, limit=50)
@@ -195,14 +195,16 @@ def get_optimal_limit_price(session, symbol, side, current_price, exchange, prof
             bids = [(float(p), float(q)) for p, q in response["bids"]]
             asks = [(float(p), float(q)) for p, q in response["asks"]]
 
-        # Правильний бік ордербуку
-        if side == "Buy":   # Лонг → Sell limit → шукаємо в bids
-            target = current_price * (1 + profit_percentage / 100)
+        # Напрямок залежить від інверсії: OFF -> вниз (-), ON -> вгору (+)
+        direction = 1 if is_inverted else -1
+        target = current_price * (1 + (direction * profit_percentage) / 100)
+
+        # Правильний бік ордербуку для пошуку ліквідності
+        if side == "Buy":   # Ми в Лонгу → Sell limit → нас виконають Bids
             min_p = target * 0.992
             max_p = target * 1.018
             relevant = [(price, qty) for price, qty in bids if min_p <= price <= max_p]
-        else:               # Шорт → Buy limit → шукаємо в asks
-            target = current_price * (1 - profit_percentage / 100)
+        else:               # Ми в Шорті → Buy limit → нас виконають Asks
             min_p = target * 0.982
             max_p = target * 1.008
             relevant = [(price, qty) for price, qty in asks if min_p <= price <= max_p]
