@@ -232,7 +232,20 @@ def get_optimal_limit_price(session, symbol, side, current_price, exchange, prof
         print(f"Error in get_optimal_limit_price: {e}")
         return None
 
-def get_next_funding_time(funding_time, funding_interval_hours):
+def get_next_funding_time(funding_time, funding_interval_hours, is_testnet=False):
+    if is_testnet:
+        # Режим налагодження для тестнету: цикл кожні 30 секунд
+        now_ts = time.time()
+        # Рахуємо скільки повних 30-секундних інтервалів пройшло з початку епохи
+        cycle_duration = 30
+        elapsed = now_ts % cycle_duration
+        secs_left = cycle_duration - elapsed
+        
+        # Форматуємо час
+        minutes, seconds = divmod(int(secs_left), 60)
+        # Для тестнету повертаємо фіктивну мітку часу в майбутньому
+        return secs_left, f"00:{minutes:02d}:{seconds:02d}"
+
     funding_dt = datetime.fromtimestamp(funding_time, tz=timezone.utc)
     current_time = datetime.now(timezone.utc)
 

@@ -1115,7 +1115,10 @@ class FundingTraderApp(QMainWindow):
         time_val = tab_data["funding_data"]["funding_time"]
 
         try:
-            time_to_funding, time_str = get_next_funding_time(time_val, tab_data["funding_interval_hours"])
+            time_to_funding, time_str = get_next_funding_time(
+                time_val, tab_data["funding_interval_hours"],
+                is_testnet=tab_data.get("testnet", False)
+            )
         except Exception as e:
             print(f"Error calculating funding time: {e}")
             return
