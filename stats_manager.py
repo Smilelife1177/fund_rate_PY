@@ -96,6 +96,10 @@ def write_imported_trades(trades: list[dict], filepath: str = STATS_CSV_FILE) ->
         if len(row) >= 10: 
             existing_keys.add((row[0], row[9]))  # Дата_Час + Тикер
 
+    # Реверсуємо список угод, щоб найстаріші йшли першими для правильного порядку в CSV (дозапис в кінець)
+    # Оскільки API повертає найновіші першими, ми їх розгортаємо.
+    trades = list(reversed(trades))
+
     written = 0
     with open(filepath, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
