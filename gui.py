@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLineEdit, QLabel, QDoubleSpinBox, QSlider,
     QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton,
     QTabBar, QScrollArea, QTableWidget, QTableWidgetItem,
-    QDialog, QDialogButtonBox, QTextEdit,
+    QDialog, QDialogButtonBox, QTextEdit, QAbstractItemView,
 )
 from PyQt6.QtCore import QTimer, Qt, QUrl
 from PyQt6.QtGui import QIcon
@@ -193,8 +193,10 @@ class FundingTraderApp(QMainWindow):
         header.setSectionResizeMode(header.ResizeMode.Interactive)
         header.setCascadingSectionResizes(True)
         header.setDefaultSectionSize(120)  # Базова ширина колонок
+        header.setStretchLastSection(False)
         
-        self.stats_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.stats_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.stats_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
 
         layout.addWidget(self.stats_table)
 
