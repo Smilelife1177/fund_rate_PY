@@ -18,3 +18,6 @@ test_stats_import.py
 GEMINI.md
 trade_stats.csv
 1trade_stats.csv
+analiz.py
+v2analiz.py
+trading_analysis.html
