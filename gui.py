@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QCheckBox, QMessageBox, QTabWidget, QToolButton,
     QTabBar, QScrollArea, QTableWidget, QTableWidgetItem,
     QDialog, QDialogButtonBox, QTextEdit, QAbstractItemView,
+    QScrollBar,
 )
 from PyQt6.QtCore import QTimer, Qt, QUrl
 from PyQt6.QtGui import QIcon
@@ -170,9 +171,19 @@ class FundingTraderApp(QMainWindow):
 
         layout.addLayout(btn_row)
 
-        # 2. Таблиця знизу під кнопками
+        # 2. Повзунок зверху для таблиці
+        self.stats_table_scrollbar = QScrollBar(Qt.Orientation.Horizontal)
+        layout.addWidget(self.stats_table_scrollbar)
+
+        # 3. Таблиця знизу під кнопками
         self.stats_table = QTableWidget()
         self.stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Синхронізація повзунків (переміщення наверх)
+        self.stats_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.stats_table_scrollbar.valueChanged.connect(self.stats_table.horizontalScrollBar().setValue)
+        self.stats_table.horizontalScrollBar().valueChanged.connect(self.stats_table_scrollbar.setValue)
+        self.stats_table.horizontalScrollBar().rangeChanged.connect(self.stats_table_scrollbar.setRange)
 
         # Стиль для таблиці: більший шрифт
         self.stats_table.setStyleSheet("""
@@ -195,7 +206,6 @@ class FundingTraderApp(QMainWindow):
         header.setDefaultSectionSize(120)  # Базова ширина колонок
         header.setStretchLastSection(False)
         
-        self.stats_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.stats_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
 
         layout.addWidget(self.stats_table)
