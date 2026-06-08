@@ -329,21 +329,26 @@ def get_order_execution_price(session, symbol, order_id, exchange):
             response = session.get_order_history(category="linear", symbol=symbol, orderId=order_id)
             if response["retCode"] != 0 or not response["result"]["list"]:
                 print(f"Error fetching order execution price for {symbol}: {response['retMsg']}")
-                return None
+                return None, None
             order = response["result"]["list"][0]
             execution_price = float(order.get("avgPrice", 0.0))
-            return execution_price if execution_price > 0 else None
+            # Отримуємо час виконання у форматі %Y-%m-%d %H:%M
+            exec_time_ms = int(order.get("updatedTime") or order.get("createdTime") or 0)
+            execution_time_str = datetime.fromtimestamp(exec_time_ms / 1000).strftime("%Y-%m-%d %H:%M")
+            return (execution_price, execution_time_str) if execution_price > 0 else (None, None)
         else:  # Binance
             response = session.get_order(symbol=symbol, orderId=order_id)
             if "avgPrice" in response:
                 execution_price = float(response["avgPrice"])
-                return execution_price if execution_price > 0 else None
+                exec_time_ms = int(response.get("time", 0))
+                execution_time_str = datetime.fromtimestamp(exec_time_ms / 1000).strftime("%Y-%m-%d %H:%M")
+                return (execution_price, execution_time_str) if execution_price > 0 else (None, None)
             else:
                 print(f"Error fetching order execution price for {symbol}: No avgPrice in response")
-                return None
+                return None, None
     except Exception as e:
         print(f"Error fetching order execution price for {symbol}: {e}")
-        return None
+        return None, None
 
 def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchange):
     try:

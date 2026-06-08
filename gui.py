@@ -188,9 +188,13 @@ class FundingTraderApp(QMainWindow):
         # Приховати вертикальні заголовки (номери рядків) для чистоти
         self.stats_table.verticalHeader().setVisible(False)
 
-        # Розтягування колонок на всю ширину (ініціалізація)
+        # Налаштування заголовків: дозволяємо ручне змінення розміру та скролл
         header = self.stats_table.horizontalHeader()
-        header.setSectionResizeMode(header.ResizeMode.Stretch)
+        header.setSectionResizeMode(header.ResizeMode.Interactive)
+        header.setCascadingSectionResizes(True)
+        header.setDefaultSectionSize(120)  # Базова ширина колонок
+        
+        self.stats_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         layout.addWidget(self.stats_table)
 
@@ -237,10 +241,11 @@ class FundingTraderApp(QMainWindow):
 
                 self.stats_table.setItem(r, c, item)
         
-        # ВАЖЛИВО: Повторно встановлюємо режим Stretch ПІСЛЯ заповнення даних,
-        # щоб колонки не збивалися при імпорті.
+        # ВАЖЛИВО: Налаштовуємо ширину колонок по контенту, але дозволяємо
+        # користувачеві змінювати їх вручну. Це активує горизонтальний скролл.
         header = self.stats_table.horizontalHeader()
-        header.setSectionResizeMode(header.ResizeMode.Stretch)
+        self.stats_table.resizeColumnsToContents()
+        header.setSectionResizeMode(header.ResizeMode.Interactive)
         
         self.stats_table.blockSignals(False)
 
@@ -1186,7 +1191,7 @@ class FundingTraderApp(QMainWindow):
         if tab_data not in self.tab_data_list:
             return
 
-        entry_price = get_order_execution_price(
+        entry_price, trade_open_time = get_order_execution_price(
             tab_data["session"], symbol, tab_data["open_order_id"], tab_data["exchange"]
         )
 
@@ -1197,7 +1202,7 @@ class FundingTraderApp(QMainWindow):
 
         tab_data["position_open"] = True
         tab_data["funding_time_price"] = entry_price
-        print(f"Entry price for {symbol}: {entry_price}")
+        print(f"Entry price for {symbol}: {entry_price} at {trade_open_time}")
 
         tick_size = get_symbol_info(tab_data["session"], symbol, tab_data["exchange"])
         decimal_places = abs(int(math.log10(tick_size))) if tick_size else 4
@@ -1260,7 +1265,7 @@ class FundingTraderApp(QMainWindow):
 
         print(f"Placing profit limit {side} close order at {limit_price} "
               f"(desired {tab_data['profit_percentage']}%, entry {entry_price})")
-#
+
         place_limit_close_order(
             tab_data["session"], symbol, side,
             tab_data.get("order_qty", tab_data["qty"]), limit_price, tick_size,
@@ -1268,9 +1273,45 @@ class FundingTraderApp(QMainWindow):
         )
         print(f"Profit limit order placed at {limit_price} "
               f"({((limit_price - entry_price)/entry_price*100 if side=='Sell' else (limit_price - entry_price)/entry_price*100):+.2f}%)")
+        
+        # === NEW: Запускаємо таймер на 5 хвилин для Change%_after5m ===
+        # Використовуємо точний час з біржі ( trade_open_time ), отриманий на початку методу
+        QTimer.singleShot(5 * 60 * 1000, lambda: self._auto_import_and_update_after_5m(tab_data, symbol, entry_price, trade_open_time))
+        
         tab_data["open_order_id"] = None
 
         QTimer.singleShot(1000, lambda: self._log_limit_price_diff(tab_data, symbol))
+
+    def _auto_import_and_update_after_5m(self, tab_data, symbol, entry_price, trade_open_time):
+        """Автоматично імпортує угоду через 5хв та додає Change%_after5m."""
+        if tab_data not in self.tab_data_list:
+            return
+            
+        print(f"Executing 5-minute auto-update for {symbol}...")
+        
+        # 1. Отримуємо ціну через 5хв
+        current_price = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
+        if not current_price or not entry_price:
+            print(f"Could not calculate 5m change for {symbol}: price is missing.")
+            return
+            
+        change_pct = ((current_price - entry_price) / entry_price) * 100
+        print(f"Price change for {symbol} after 5m: {change_pct:+.2f}%")
+        
+        # 2. Імпортуємо останні угоди (щоб наша угода точно була в CSV)
+        trades = get_closed_trades(tab_data["session"], tab_data["exchange"], limit=5)
+        if trades:
+            written = stats.write_imported_trades(trades)
+            print(f"Auto-import: written {written} trades.")
+            
+        # 3. Оновлюємо конкретний рядок у CSV
+        updated = stats.update_trade_after_5m(symbol, trade_open_time, change_pct)
+        if updated:
+            print(f"Successfully updated Change%_after5m for {symbol} at {trade_open_time}")
+            self._update_stats_table()
+        else:
+            # Спробуємо також пошукати за поточним часом (якщо datetime.now() в write_stats_row був іншим)
+            print(f"Could not find trade for {symbol} at {trade_open_time} in CSV to update.")
 
     def _log_limit_price_diff(self, tab_data, symbol):
         if tab_data not in self.tab_data_list:
