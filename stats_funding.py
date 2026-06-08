@@ -22,8 +22,11 @@ FIELDNAMES = [
     "price_change_24h_pct",
     "price_pre_15s", 
     "price_1m", 
+    "price_1m_%",
     "price_5m", 
-    "price_10m"
+    "price_5m_%",
+    "price_10m",
+    "price_10m_%"
 ]
 
 def get_advanced_stats(session, symbol, current_price, ticker_item):
@@ -127,6 +130,17 @@ class FundingBatch:
                 
                 ts_str = self.funding_time_dt.strftime("%Y-%m-%d %H:%M:%S")
                 for symbol, d in self.records.items():
+                    price_pre = d['price']
+                    
+                    p1m = self.price_1m.get(symbol, 0)
+                    p5m = self.price_5m.get(symbol, 0)
+                    p10m = self.price_10m.get(symbol, 0)
+                    
+                    # Calculate % changes relative to price_pre_15s
+                    ch1m = ((p1m - price_pre) / price_pre * 100) if price_pre > 0 and p1m > 0 else 0
+                    ch5m = ((p5m - price_pre) / price_pre * 100) if price_pre > 0 and p5m > 0 else 0
+                    ch10m = ((p10m - price_pre) / price_pre * 100) if price_pre > 0 and p10m > 0 else 0
+
                     writer.writerow({
                         "funding_timestamp": ts_str,
                         "symbol": symbol,
@@ -141,9 +155,12 @@ class FundingBatch:
                         "price_change_12h_pct": f"{d['change12h']:.4f}",
                         "price_change_24h_pct": f"{d['change24h']:.4f}",
                         "price_pre_15s": f"{d['price']:.6f}",
-                        "price_1m": f"{self.price_1m.get(symbol, 0):.6f}",
-                        "price_5m": f"{self.price_5m.get(symbol, 0):.6f}",
-                        "price_10m": f"{self.price_10m.get(symbol, 0):.6f}"
+                        "price_1m": f"{p1m:.6f}",
+                        "price_1m_%": f"{ch1m:+.4f}",
+                        "price_5m": f"{p5m:.6f}",
+                        "price_5m_%": f"{ch5m:+.4f}",
+                        "price_10m": f"{p10m:.6f}",
+                        "price_10m_%": f"{ch10m:+.4f}"
                     })
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Batch {ts_str} saved to {STATS_FILE}")
         except Exception as e:
