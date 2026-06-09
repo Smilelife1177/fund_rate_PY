@@ -1,11 +1,13 @@
 import os
 import time
 import csv
+import pytz
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from logic import initialize_client
 
 # Constants
+KYIV_TZ = pytz.timezone("Europe/Kyiv")
 STATS_FILE = "funding_stats.csv"
 FIELDNAMES = [
     "funding_timestamp", 
@@ -20,7 +22,7 @@ FIELDNAMES = [
     "price_change_1h_pct",
     "price_change_12h_pct",
     "price_change_24h_pct",
-    "price_pre_15s", 
+    "price_pre_5s", 
     "price_1m", 
     "price_1m_%",
     "price_5m", 
@@ -91,11 +93,12 @@ class FundingBatch:
     """Tracks a group of coins sharing the same funding time."""
     def __init__(self, funding_time_ms):
         self.funding_time_ms = funding_time_ms
-        self.funding_time_dt = datetime.fromtimestamp(funding_time_ms / 1000, tz=timezone.utc)
+        self.funding_time_dt = datetime.fromtimestamp(funding_time_ms / 1000, tz=timezone.utc).astimezone(KYIV_TZ)
         self.records = {} # symbol -> {all stats}
         self.price_1m = {}
         self.price_5m = {}
         self.price_10m = {}
+        self.price_pre5s = {}
         self.captured_stages = set()
         self.is_completed = False
 
@@ -136,7 +139,8 @@ class FundingBatch:
                     p5m = self.price_5m.get(symbol, 0)
                     p10m = self.price_10m.get(symbol, 0)
                     
-                    # Calculate % changes relative to price_pre_15s
+                    # Calculate % changes relative to price captured 5s before funding
+                    price_pre = self.price_pre5s.get(symbol, d['price'])
                     ch1m = ((p1m - price_pre) / price_pre * 100) if price_pre > 0 and p1m > 0 else 0
                     ch5m = ((p5m - price_pre) / price_pre * 100) if price_pre > 0 and p5m > 0 else 0
                     ch10m = ((p10m - price_pre) / price_pre * 100) if price_pre > 0 and p10m > 0 else 0
@@ -154,7 +158,7 @@ class FundingBatch:
                         "price_change_1h_pct": f"{d['change1h']:.4f}",
                         "price_change_12h_pct": f"{d['change12h']:.4f}",
                         "price_change_24h_pct": f"{d['change24h']:.4f}",
-                        "price_pre_15s": f"{d['price']:.6f}",
+                        "price_pre_5s": f"{price_pre:.6f}",
                         "price_1m": f"{p1m:.6f}",
                         "price_1m_%": f"{ch1m:+.4f}",
                         "price_5m": f"{p5m:.6f}",
@@ -243,7 +247,7 @@ def main():
 
     while True:
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(KYIV_TZ)
             
             # 1. Trigger Check (Minute 59)
             # Starting earlier (59:05) to allow more time for deep stats without hitting rate limits
@@ -282,7 +286,7 @@ def main():
                             if ft_ms in active_batches: continue
                             
                             batch = FundingBatch(ft_ms)
-                            print(f"[{now.strftime('%H:%M:%S')}] Event detected for {batch.funding_time_dt}. Processing {len(items)} symbols.")
+                            print(f"[{now.strftime('%H:%M:%S')}] Event detected for {batch.funding_time_dt.strftime('%Y-%m-%d %H:%M:%S')}. Processing {len(items)} symbols.")
                             
                             # Sort by funding rate magnitude
                             items.sort(key=lambda x: abs(float(x.get("fundingRate") or 0)), reverse=True)
@@ -314,7 +318,7 @@ def main():
                                     print(f"Error gathering stats for {symbol}: {e}")
                             
                             active_batches[ft_ms] = batch
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Batch {batch.funding_time_dt} initialization complete.")
+                            print(f"[{datetime.now(KYIV_TZ).strftime('%H:%M:%S')}] Batch {batch.funding_time_dt.strftime('%Y-%m-%d %H:%M:%S')} initialization complete.")
                     else:
                         print(f"[{now.strftime('%H:%M:%S')}] No coins found with funding in the next 2 minutes.")
                 else:
@@ -328,9 +332,11 @@ def main():
                 needs_update = False
                 for ft_ms, batch in active_batches.items():
                     elapsed = (now_ms - ft_ms) / 1000.0
+                    time_to_funding = (ft_ms - now_ms) / 1000.0
                     if (elapsed >= 60 and "1m" not in batch.captured_stages) or \
                        (elapsed >= 300 and "5m" not in batch.captured_stages) or \
-                       (elapsed >= 600 and "10m" not in batch.captured_stages):
+                       (elapsed >= 600 and "10m" not in batch.captured_stages) or \
+                       (0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages):
                         needs_update = True
                         break
                 
@@ -342,7 +348,9 @@ def main():
                         completed_keys = []
                         for ft_ms, batch in active_batches.items():
                             elapsed_sec = (now_ms - ft_ms) / 1000.0
-                            
+                            time_to_funding = (ft_ms - now_ms) / 1000.0
+                            if 0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages:
+                                batch.update_prices(tickers, "pre5s")
                             if elapsed_sec >= 60 and "1m" not in batch.captured_stages:
                                 batch.update_prices(tickers, "1m")
                             if elapsed_sec >= 300 and "5m" not in batch.captured_stages:
