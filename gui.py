@@ -1392,7 +1392,7 @@ class FundingTraderApp(QMainWindow):
     #  Оновлення даних вкладки                                            #
     # ------------------------------------------------------------------ #
 
-    def _update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2):
+    def _update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2, refresh_web=True):
         tab_data["order_placed_this_cycle"] = False
         if tab_data not in self.tab_data_list:
             return
@@ -1433,7 +1433,8 @@ class FundingTraderApp(QMainWindow):
                 self._update_volume_label(tab_data)
                 self._update_predicted_profit(tab_data)
                 self._update_ping(tab_data)
-                self._refresh_web_view(tab_data)
+                if refresh_web:
+                    self._refresh_web_view(tab_data)
                 return
             except Exception as e:
                 print(f"Error updating funding data (attempt {attempt + 1}): {e}")
@@ -1746,7 +1747,7 @@ class FundingTraderApp(QMainWindow):
         self._update_disable_trades_checkbox_style()
         for td in self.tab_data_list:
             self._update_tab_labels(td)
-            self._update_tab_funding_data(td)
+            self._update_tab_funding_data(td, refresh_web=False)
 
         # Оновлення вкладки Статистики
         self.stats_refresh_btn.setText(self.trans["refresh_button"])
