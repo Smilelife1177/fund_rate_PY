@@ -72,8 +72,20 @@ def load_disable_trades(settings_path: str = SETTINGS_PATH) -> bool:
     return False
 
 
-def save_settings(tab_data_list: list[dict], language: str, settings_path: str = SETTINGS_PATH, disable_funding_trades: bool = False):
-    """Зберігає всі налаштування, включаючи Auto Calculation та глобальний блок угод."""
+def load_collect_funding_stats(settings_path: str = SETTINGS_PATH) -> bool:
+    """Завантажує глобальний статус збирання статистики монет."""
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+                return settings.get("collect_funding_stats", False)
+        except Exception as e:
+            print(f"Error loading collect_funding_stats: {e}")
+    return False
+
+
+def save_settings(tab_data_list: list[dict], language: str, settings_path: str = SETTINGS_PATH, disable_funding_trades: bool = False, collect_funding_stats: bool = False):
+    """Зберігає всі налаштування, включаючи Auto Calculation, глобальний блок угод та статус збору статистики."""
     tabs = []
     for td in tab_data_list:
         tab_dict = {
@@ -101,7 +113,8 @@ def save_settings(tab_data_list: list[dict], language: str, settings_path: str =
     data = {
         "tabs": tabs,
         "language": language,
-        "disable_funding_trades": disable_funding_trades
+        "disable_funding_trades": disable_funding_trades,
+        "collect_funding_stats": collect_funding_stats
     }
 
     try:

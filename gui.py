@@ -13,6 +13,9 @@ gui.py — головне вікно застосунку FundingTrader.
 import os
 import math
 import time
+import threading
+import csv
+import pytz
 from datetime import datetime, timezone
 
 from PyQt6.QtWidgets import (
@@ -44,6 +47,7 @@ import settings_manager as sm
 import stats_manager as stats
 from auto_scanner import scan_funding_opportunities, format_funding_time
 from tab_data import build_tab_data
+import stats_funding
 
 # ---------------------------------------------------------------------------
 # Допоміжні класи
@@ -66,6 +70,7 @@ class FundingTraderApp(QMainWindow):
         self.language = sm.load_language(self.settings_path)
         self.trans = translations[self.language]
         self.disable_funding_trades = sm.load_disable_trades(self.settings_path)
+        self.collect_funding_stats = sm.load_collect_funding_stats(self.settings_path)
 
         self.setWindowTitle(self.trans["window_title"].format(exchange))
         self.setGeometry(100, 100, 1800, 1000)
@@ -104,6 +109,12 @@ class FundingTraderApp(QMainWindow):
         self._init_stats_tab()
         stats.initialize_stats_csv()
         self._update_stats_table()
+
+        self._init_observation_tab()
+        self._update_observation_table()
+
+        self._stats_thread = threading.Thread(target=self._run_stats_collector, daemon=True)
+        self._stats_thread.start()
 
         # Верхня панель налаштувань
         top_bar = QHBoxLayout()
@@ -275,6 +286,319 @@ class FundingTraderApp(QMainWindow):
         header.setSectionResizeMode(header.ResizeMode.Interactive)
         
         self.stats_table.blockSignals(False)
+
+    # ------------------------------------------------------------------ #
+    #  Вкладка Спостереження (Збір статистики фандингу)                  #
+    # ------------------------------------------------------------------ #
+
+    def _init_observation_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # 1. Кнопки і налаштування
+        btn_row = QHBoxLayout()
+        
+        self.collect_stats_checkbox = QCheckBox(self.trans["collect_stats_checkbox"])
+        self.collect_stats_checkbox.setChecked(self.collect_funding_stats)
+        self.collect_stats_checkbox.stateChanged.connect(self._on_collect_stats_changed)
+        self._update_collect_stats_checkbox_style()
+        btn_row.addWidget(self.collect_stats_checkbox)
+
+        btn_row.addSpacing(20)
+
+        self.observation_refresh_btn = QPushButton(self.trans["refresh_button"])
+        self.observation_refresh_btn.clicked.connect(self._update_observation_table)
+        btn_row.addWidget(self.observation_refresh_btn)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        # 2. Повзунок зверху для таблиці
+        self.observation_table_scrollbar = QScrollBar(Qt.Orientation.Horizontal)
+        layout.addWidget(self.observation_table_scrollbar)
+
+        # 3. Таблиця спостережень
+        self.observation_table = QTableWidget()
+        self.observation_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.observation_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.observation_table_scrollbar.valueChanged.connect(self.observation_table.horizontalScrollBar().setValue)
+        self.observation_table.horizontalScrollBar().valueChanged.connect(self.observation_table_scrollbar.setValue)
+        self.observation_table.horizontalScrollBar().rangeChanged.connect(self.observation_table_scrollbar.setRange)
+
+        self.observation_table.setStyleSheet("""
+            QTableWidget {
+                font-size: 14px;
+            }
+            QHeaderView::section {
+                font-size: 14px;
+                font-weight: bold;
+            }
+        """)
+        self.observation_table.verticalHeader().setVisible(False)
+
+        header = self.observation_table.horizontalHeader()
+        header.setSectionResizeMode(header.ResizeMode.Interactive)
+        header.setCascadingSectionResizes(True)
+        header.setDefaultSectionSize(120)
+        header.setStretchLastSection(False)
+        self.observation_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+
+        layout.addWidget(self.observation_table)
+
+        idx = self.tab_widget.addTab(tab, self.trans["observation_tab_title"])
+        self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, None)
+        self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.LeftSide, None)
+
+    def _update_collect_stats_checkbox_style(self):
+        t = self.trans
+        if self.collect_stats_checkbox.isChecked():
+            self.collect_stats_checkbox.setText(t["collect_stats_checkbox"])
+            self.collect_stats_checkbox.setStyleSheet("""
+                QCheckBox {
+                    font-size: 11pt;
+                    font-weight: bold;
+                    color: #ffffff;
+                    background-color: #2e7d32;
+                    padding: 8px 15px;
+                    border: 2px solid #1b5e20;
+                    border-radius: 6px;
+                }
+                QCheckBox::indicator {
+                    width: 18px;
+                    height: 18px;
+                }
+            """)
+        else:
+            self.collect_stats_checkbox.setText(t["collect_stats_checkbox"])
+            self.collect_stats_checkbox.setStyleSheet("""
+                QCheckBox {
+                    font-size: 11pt;
+                    font-weight: bold;
+                    color: #555555;
+                    background-color: #e0e0e0;
+                    padding: 8px 15px;
+                    border: 2px solid #9e9e9e;
+                    border-radius: 6px;
+                }
+                QCheckBox::indicator {
+                    width: 18px;
+                    height: 18px;
+                }
+            """)
+
+    def _on_collect_stats_changed(self, state):
+        self.collect_funding_stats = (state == Qt.CheckState.Checked.value)
+        self._update_collect_stats_checkbox_style()
+        self._save()
+
+    def _update_observation_table(self):
+        self.observation_table.blockSignals(True)
+        stats_file = stats_funding.STATS_FILE
+        if not os.path.exists(stats_file):
+            self.observation_table.setRowCount(0)
+            self.observation_table.blockSignals(False)
+            return
+
+        try:
+            with open(stats_file, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+        except Exception as e:
+            print(f"Error reading funding stats CSV: {e}")
+            self.observation_table.setRowCount(0)
+            self.observation_table.blockSignals(False)
+            return
+
+        if not rows:
+            self.observation_table.setRowCount(0)
+            self.observation_table.blockSignals(False)
+            return
+
+        headers = rows[0]
+        data_rows = list(reversed(rows[1:]))
+        
+        self.observation_table.setColumnCount(len(headers))
+        self.observation_table.setHorizontalHeaderLabels(headers)
+        self.observation_table.setRowCount(len(data_rows))
+        
+        for r, row in enumerate(data_rows):
+            for c, val in enumerate(row):
+                item = QTableWidgetItem(val)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                
+                if c == 2: # funding_rate_pct
+                     try:
+                         clean_val = val.replace('%', '').strip()
+                         num_val = float(clean_val)
+                         if num_val > 0:
+                             item.setForeground(QColor(0, 153, 0))
+                         elif num_val < 0:
+                             item.setForeground(QColor(153, 0, 0))
+                     except ValueError:
+                         pass
+                elif c in (14, 16, 18): # price changes 1m_%, 5m_%, 10m_%
+                     try:
+                         clean_val = val.replace('+', '').replace('%', '').strip()
+                         num_val = float(clean_val)
+                         if num_val > 0:
+                             item.setBackground(QColor(232, 245, 233))
+                             item.setForeground(QColor(46, 125, 50))
+                         elif num_val < 0:
+                             item.setBackground(QColor(255, 235, 235))
+                             item.setForeground(QColor(198, 40, 40))
+                     except ValueError:
+                         pass
+
+                self.observation_table.setItem(r, c, item)
+        
+        header = self.observation_table.horizontalHeader()
+        self.observation_table.resizeColumnsToContents()
+        header.setSectionResizeMode(header.ResizeMode.Interactive)
+        
+        self.observation_table.blockSignals(False)
+        
+    def _run_stats_collector(self):
+        session = None
+        last_trigger_hour = -1
+        active_batches = {}
+        MIN_FUNDING_THRESHOLD = 0.100
+
+        while True:
+            if not getattr(self, "collect_funding_stats", False):
+                time.sleep(5)
+                continue
+
+            if session is None:
+                try:
+                    session = initialize_client("Bybit", testnet=False)
+                    print("Stats Collector: Bybit client initialized successfully.")
+                except Exception as e:
+                    print(f"Stats Collector: Failed to initialize Bybit client: {e}")
+                    time.sleep(10)
+                    continue
+
+            try:
+                kyiv_tz = pytz.timezone("Europe/Kyiv")
+                now = datetime.now(kyiv_tz)
+                
+                # 1. Trigger Check (Minute 59)
+                if now.minute == 59 and now.hour != last_trigger_hour and now.second >= 5:
+                    last_trigger_hour = now.hour
+                    print(f"\n[{now.strftime('%H:%M:%S')}] Stats Collector: Minute 59 Trigger: Scanning for upcoming funding events...")
+                    
+                    response = session.get_tickers(category="linear")
+                    if response.get("retCode") == 0:
+                        tickers = response["result"]["list"]
+                        now_ms = int(time.time() * 1000)
+                        
+                        upcoming = []
+                        for it in tickers:
+                            if not it.get("symbol", "").endswith("USDT"):
+                                continue
+                            
+                            rate_pct = float(it.get("fundingRate") or 0) * 100
+                            if abs(rate_pct) < MIN_FUNDING_THRESHOLD:
+                                continue
+
+                            ft = int(it.get("nextFundingTime") or 0)
+                            if 0 < (ft - now_ms) <= 120000:
+                                upcoming.append(it)
+                        
+                        if upcoming:
+                            ft_groups = {}
+                            for it in upcoming:
+                                ft = int(it["nextFundingTime"])
+                                ft_key = (ft // 10000) * 10000
+                                if ft_key not in ft_groups:
+                                    ft_groups[ft_key] = []
+                                ft_groups[ft_key].append(it)
+                            
+                            for ft_ms, items in ft_groups.items():
+                                if ft_ms in active_batches:
+                                    continue
+                                
+                                batch = stats_funding.FundingBatch(ft_ms)
+                                print(f"[{now.strftime('%H:%M:%S')}] Stats Collector: Event detected for {batch.funding_time_dt.strftime('%Y-%m-%d %H:%M:%S')}. Processing {len(items)} symbols.")
+                                
+                                items.sort(key=lambda x: abs(float(x.get("fundingRate") or 0)), reverse=True)
+                                target_items = items[:150]
+                                
+                                seen_symbols = set()
+                                for idx, it in enumerate(target_items):
+                                    if not getattr(self, "collect_funding_stats", False):
+                                        break
+                                    symbol = it["symbol"]
+                                    if symbol in seen_symbols:
+                                        continue
+                                    seen_symbols.add(symbol)
+                                    
+                                    try:
+                                        price = float(it.get("lastPrice") or 0)
+                                        rate = float(it.get("fundingRate") or 0) * 100
+                                        vol24h = float(it.get("volume24h") or 0)
+                                        ch24h = float(it.get("price24hPcnt") or 0) * 100
+                                        
+                                        adv = stats_funding.get_advanced_stats(session, symbol, price, it)
+                                        batch.add_coin(symbol, rate, vol24h, price, ch24h, adv)
+                                        
+                                        time.sleep(0.15) 
+                                        
+                                        if (idx + 1) % 20 == 0:
+                                            print(f"  Processed {idx + 1}/{len(target_items)} coins...")
+                                    except Exception as e:
+                                        print(f"Error gathering stats for {symbol}: {e}")
+                                
+                                active_batches[ft_ms] = batch
+                                print(f"[{datetime.now(kyiv_tz).strftime('%H:%M:%S')}] Stats Collector: Batch {batch.funding_time_dt.strftime('%Y-%m-%d %H:%M:%S')} initialization complete.")
+                        else:
+                            print(f"[{now.strftime('%H:%M:%S')}] Stats Collector: No coins found with funding in the next 2 minutes.")
+                    else:
+                        print(f"API Error fetching tickers: {response.get('retMsg')}")
+                        last_trigger_hour = -1
+
+                # 2. Update Prices for Active Batches
+                if active_batches:
+                    now_ms = int(time.time() * 1000)
+                    needs_update = False
+                    for ft_ms, batch in active_batches.items():
+                        elapsed = (now_ms - ft_ms) / 1000.0
+                        time_to_funding = (ft_ms - now_ms) / 1000.0
+                        if (elapsed >= 60 and "1m" not in batch.captured_stages) or \
+                           (elapsed >= 300 and "5m" not in batch.captured_stages) or \
+                           (elapsed >= 600 and "10m" not in batch.captured_stages) or \
+                           (0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages):
+                            needs_update = True
+                            break
+                    
+                    if needs_update:
+                        response = session.get_tickers(category="linear")
+                        if response.get("retCode") == 0:
+                            tickers = response["result"]["list"]
+                            
+                            completed_keys = []
+                            for ft_ms, batch in active_batches.items():
+                                elapsed_sec = (now_ms - ft_ms) / 1000.0
+                                time_to_funding = (ft_ms - now_ms) / 1000.0
+                                if 0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages:
+                                    batch.update_prices(tickers, "pre5s")
+                                if elapsed_sec >= 60 and "1m" not in batch.captured_stages:
+                                    batch.update_prices(tickers, "1m")
+                                if elapsed_sec >= 300 and "5m" not in batch.captured_stages:
+                                    batch.update_prices(tickers, "5m")
+                                if elapsed_sec >= 600 and "10m" not in batch.captured_stages:
+                                    batch.update_prices(tickers, "10m")
+                                    batch.save_to_csv()
+                                    completed_keys.append(ft_ms)
+                                    QTimer.singleShot(0, self._update_observation_table)
+                            
+                            for k in completed_keys:
+                                del active_batches[k]
+
+                time.sleep(2)
+
+            except Exception as e:
+                print(f"Stats Collector Main Loop Error: {e}")
+                time.sleep(5)
 
     def _open_stats_input_dialog(self):
         dialog = QDialog(self)
@@ -1764,6 +2088,18 @@ class FundingTraderApp(QMainWindow):
         if stats_idx != -1:
             self.tab_widget.setTabText(stats_idx, self.trans["stats_tab_title"])
 
+        # Оновлення вкладки Спостереження
+        self._update_collect_stats_checkbox_style()
+        self.observation_refresh_btn.setText(self.trans["refresh_button"])
+
+        obs_idx = -1
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(i) in ["Observation", "Спостереження"]:
+                obs_idx = i
+                break
+        if obs_idx != -1:
+            self.tab_widget.setTabText(obs_idx, self.trans["observation_tab_title"])
+
         self._save()
 
     def _update_tab_labels(self, tab_data):
@@ -1861,4 +2197,4 @@ class FundingTraderApp(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _save(self):
-        sm.save_settings(self.tab_data_list, self.language, self.settings_path, disable_funding_trades=self.disable_funding_trades)
+        sm.save_settings(self.tab_data_list, self.language, self.settings_path, disable_funding_trades=self.disable_funding_trades, collect_funding_stats=self.collect_funding_stats)
