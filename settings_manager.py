@@ -60,8 +60,20 @@ def load_settings(settings_path: str = SETTINGS_PATH) -> list[dict]:
         return [DEFAULT_TAB_SETTINGS.copy()]
 
 
-def save_settings(tab_data_list: list[dict], language: str, settings_path: str = SETTINGS_PATH):
-    """Зберігає всі налаштування, включаючи Auto Calculation."""
+def load_disable_trades(settings_path: str = SETTINGS_PATH) -> bool:
+    """Завантажує глобальний статус відключення угод."""
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+                return settings.get("disable_funding_trades", False)
+        except Exception as e:
+            print(f"Error loading disable_funding_trades: {e}")
+    return False
+
+
+def save_settings(tab_data_list: list[dict], language: str, settings_path: str = SETTINGS_PATH, disable_funding_trades: bool = False):
+    """Зберігає всі налаштування, включаючи Auto Calculation та глобальний блок угод."""
     tabs = []
     for td in tab_data_list:
         tab_dict = {
@@ -86,7 +98,11 @@ def save_settings(tab_data_list: list[dict], language: str, settings_path: str =
         }
         tabs.append(tab_dict)
 
-    data = {"tabs": tabs, "language": language}
+    data = {
+        "tabs": tabs,
+        "language": language,
+        "disable_funding_trades": disable_funding_trades
+    }
 
     try:
         os.makedirs(os.path.dirname(settings_path), exist_ok=True)

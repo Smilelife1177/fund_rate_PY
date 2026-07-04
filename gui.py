@@ -65,6 +65,7 @@ class FundingTraderApp(QMainWindow):
         self.settings_path = sm.SETTINGS_PATH
         self.language = sm.load_language(self.settings_path)
         self.trans = translations[self.language]
+        self.disable_funding_trades = sm.load_disable_trades(self.settings_path)
 
         self.setWindowTitle(self.trans["window_title"].format(exchange))
         self.setGeometry(100, 100, 1800, 1000)
@@ -104,8 +105,22 @@ class FundingTraderApp(QMainWindow):
         stats.initialize_stats_csv()
         self._update_stats_table()
 
-        self.main_layout.addWidget(self.language_label)
-        self.main_layout.addWidget(self.language_combobox)
+        # Верхня панель налаштувань
+        top_bar = QHBoxLayout()
+        top_bar.setContentsMargins(10, 5, 10, 5)
+        top_bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        
+        top_bar.addWidget(self.language_label)
+        top_bar.addWidget(self.language_combobox)
+        
+        top_bar.addSpacing(30)
+        
+        self._init_disable_trades_ui()
+        top_bar.addWidget(self.disable_trades_checkbox)
+        
+        top_bar.addStretch()
+
+        self.main_layout.addLayout(top_bar)
         self.main_layout.addWidget(self.tab_widget)
         self._save()
 
@@ -1153,21 +1168,24 @@ class FundingTraderApp(QMainWindow):
         entry_window = tab_data["entry_time_seconds"]
 
         if time_to_funding <= entry_window and time_to_funding > 0 and not tab_data["open_order_id"]:
-            print(f"[ORDER TRIGGER] {symbol} time_to_funding={time_to_funding:.3f} entry_window={entry_window}")
-            side = (
-                ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"]
-                else ("Buy" if rate > 0 else "Sell")
-            )
-            tab_data["open_order_id"] = place_market_order(
-                tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
-            )
-            if tab_data["open_order_id"]:
-                tab_data["order_qty"] = tab_data["qty"]  # ← фіксуємо qty угоди
-                tab_data["order_placed_this_cycle"] = True
-                delay_ms = int((time_to_funding - 0.5) * 1000)
-                delay_ms = max(0, delay_ms)  # не може бути від'ємним
-                QTimer.singleShot(delay_ms, lambda: self._capture_funding_price(tab_data, symbol, side))
-            tab_data["pre_funding_price"] = None
+            if self.disable_trades_checkbox.isChecked():
+                print(f"[TRADING BLOCKED] Funding trade for {symbol} bypassed because Global Block is active.")
+            else:
+                print(f"[ORDER TRIGGER] {symbol} time_to_funding={time_to_funding:.3f} entry_window={entry_window}")
+                side = (
+                    ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"]
+                    else ("Buy" if rate > 0 else "Sell")
+                )
+                tab_data["open_order_id"] = place_market_order(
+                    tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
+                )
+                if tab_data["open_order_id"]:
+                    tab_data["order_qty"] = tab_data["qty"]  # ← фіксуємо qty угоди
+                    tab_data["order_placed_this_cycle"] = True
+                    delay_ms = int((time_to_funding - 0.5) * 1000)
+                    delay_ms = max(0, delay_ms)  # не може бути від'ємним
+                    QTimer.singleShot(delay_ms, lambda: self._capture_funding_price(tab_data, symbol, side))
+                tab_data["pre_funding_price"] = None
 
         if time_to_funding <= 10:
             print(f"[COUNTDOWN] {symbol} time_to_funding={time_to_funding:.3f}s entry_window={tab_data['entry_time_seconds']}s order_id={tab_data['open_order_id']}")
@@ -1665,6 +1683,58 @@ class FundingTraderApp(QMainWindow):
         # self._recalculate_auto_qty(tab_data)
 
     # ------------------------------------------------------------------ #
+    #  Глобальне відключення угод                                         #
+    # ------------------------------------------------------------------ #
+
+    def _init_disable_trades_ui(self):
+        self.disable_trades_checkbox = QCheckBox()
+        self.disable_trades_checkbox.setChecked(self.disable_funding_trades)
+        self.disable_trades_checkbox.stateChanged.connect(self._on_disable_trades_changed)
+        self._update_disable_trades_checkbox_style()
+
+    def _update_disable_trades_checkbox_style(self):
+        t = self.trans
+        if self.disable_trades_checkbox.isChecked():
+            self.disable_trades_checkbox.setText(t["disable_trades_checkbox"])
+            self.disable_trades_checkbox.setStyleSheet("""
+                QCheckBox {
+                    font-size: 11pt;
+                    font-weight: bold;
+                    color: #ffffff;
+                    background-color: #d32f2f;
+                    padding: 8px 15px;
+                    border: 2px solid #b71c1c;
+                    border-radius: 6px;
+                }
+                QCheckBox::indicator {
+                    width: 18px;
+                    height: 18px;
+                }
+            """)
+        else:
+            self.disable_trades_checkbox.setText(t["disable_trades_checkbox"])
+            self.disable_trades_checkbox.setStyleSheet("""
+                QCheckBox {
+                    font-size: 11pt;
+                    font-weight: bold;
+                    color: #1b5e20;
+                    background-color: #c8e6c9;
+                    padding: 8px 15px;
+                    border: 2px solid #81c784;
+                    border-radius: 6px;
+                }
+                QCheckBox::indicator {
+                    width: 18px;
+                    height: 18px;
+                }
+            """)
+
+    def _on_disable_trades_changed(self, state):
+        self.disable_funding_trades = (state == Qt.CheckState.Checked.value)
+        self._update_disable_trades_checkbox_style()
+        self._save()
+
+    # ------------------------------------------------------------------ #
     #  Локалізація                                                        #
     # ------------------------------------------------------------------ #
 
@@ -1673,6 +1743,7 @@ class FundingTraderApp(QMainWindow):
         self.trans = translations[self.language]
         self.setWindowTitle(self.trans["window_title"].format("Multi-Coin"))
         self.language_label.setText(self.trans["language_label"])
+        self._update_disable_trades_checkbox_style()
         for td in self.tab_data_list:
             self._update_tab_labels(td)
             self._update_tab_funding_data(td)
@@ -1789,4 +1860,4 @@ class FundingTraderApp(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _save(self):
-        sm.save_settings(self.tab_data_list, self.language, self.settings_path)
+        sm.save_settings(self.tab_data_list, self.language, self.settings_path, disable_funding_trades=self.disable_funding_trades)

@@ -74,6 +74,8 @@ translations = {
         "auto_profit_addon_label":  "+% to funding:",
         "auto_balance_pct_label":   "% of balance:",
         "stop_addon_label": "Stop % above entry:",
+        "disable_trades_label": "Global Trading Status:",
+        "disable_trades_checkbox": "BLOCK ALL FUNDING TRADES",
     },
     "uk": {
         "window_title": "{} Трейдер Фінансування",
@@ -149,5 +151,7 @@ translations = {
         "auto_profit_addon_label":  "+% до фандингу:",
         "auto_balance_pct_label":   "% від балансу:",
         "stop_addon_label": "Стоп % вище входу:",
+        "disable_trades_label": "Глобальний статус торгівлі:",
+        "disable_trades_checkbox": "БЛОКУВАТИ ВСІ УГОДИ ПО ФАНДИНГУ",
     }
 }
