@@ -13,9 +13,9 @@ gui.py — головне вікно застосунку FundingTrader.
 import os
 import math
 import time
-import threading
 import csv
-import pytz
+import subprocess
+import sys
 from datetime import datetime, timezone
 
 from PyQt6.QtWidgets import (
@@ -72,6 +72,7 @@ class FundingTraderApp(QMainWindow):
         self.trans = translations[self.language]
         self.disable_funding_trades = sm.load_disable_trades(self.settings_path)
         self.collect_funding_stats = sm.load_collect_funding_stats(self.settings_path)
+        self._funding_stats_process = None
 
         self.setWindowTitle(self.trans["window_title"].format(exchange))
         self.setGeometry(100, 100, 1800, 1000)
@@ -114,8 +115,11 @@ class FundingTraderApp(QMainWindow):
         self._init_observation_tab()
         self._update_observation_table()
 
-        self._stats_thread = threading.Thread(target=self._run_stats_collector, daemon=True)
-        self._stats_thread.start()
+        self._observation_refresh_timer = QTimer()
+        self._observation_refresh_timer.timeout.connect(self._update_observation_table)
+        self._observation_refresh_timer.start(30000)
+        if self.collect_funding_stats:
+            self._start_funding_stats_process()
 
         # Верхня панель налаштувань
         top_bar = QHBoxLayout()
@@ -394,7 +398,52 @@ class FundingTraderApp(QMainWindow):
     def _on_collect_stats_changed(self, state):
         self.collect_funding_stats = (state == Qt.CheckState.Checked.value)
         self._update_collect_stats_checkbox_style()
+        if self.collect_funding_stats:
+            self._start_funding_stats_process()
+        else:
+            self._stop_funding_stats_process()
         self._save()
+
+    def _start_funding_stats_process(self):
+        if self._funding_stats_process and self._funding_stats_process.poll() is None:
+            print("Funding stats recorder is already running.")
+            return
+
+        script_path = os.path.abspath("stats_funding.py")
+        if not os.path.exists(script_path):
+            print(f"Funding stats recorder not found: {script_path}")
+            return
+
+        try:
+            self._funding_stats_process = subprocess.Popen(
+                [sys.executable, "-u", script_path],
+                cwd=os.getcwd(),
+            )
+            print(f"Funding stats recorder started with PID {self._funding_stats_process.pid}")
+        except Exception as e:
+            self._funding_stats_process = None
+            print(f"Failed to start funding stats recorder: {e}")
+
+    def _stop_funding_stats_process(self):
+        proc = self._funding_stats_process
+        if not proc or proc.poll() is not None:
+            self._funding_stats_process = None
+            print("Funding stats recorder is not running.")
+            return
+
+        print("Stopping funding stats recorder...")
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                print("Funding stats recorder did not stop in time; killing process.")
+                proc.kill()
+                proc.wait(timeout=5)
+        except Exception as e:
+            print(f"Failed to stop funding stats recorder: {e}")
+        finally:
+            self._funding_stats_process = None
 
     def _open_funding_analysis(self):
         dialog = FundingAnalysisDialog(
@@ -470,149 +519,6 @@ class FundingTraderApp(QMainWindow):
         
         self.observation_table.blockSignals(False)
         
-    def _run_stats_collector(self):
-        session = None
-        last_trigger_hour = -1
-        active_batches = {}
-        MIN_FUNDING_THRESHOLD = 0.100
-
-        while True:
-            if not getattr(self, "collect_funding_stats", False):
-                time.sleep(5)
-                continue
-
-            if session is None:
-                try:
-                    session = initialize_client("Bybit", testnet=False)
-                    print("Stats Collector: Bybit client initialized successfully.")
-                except Exception as e:
-                    print(f"Stats Collector: Failed to initialize Bybit client: {e}")
-                    time.sleep(10)
-                    continue
-
-            try:
-                kyiv_tz = pytz.timezone("Europe/Kyiv")
-                now = datetime.now(kyiv_tz)
-                
-                # 1. Trigger Check (Minute 59)
-                if now.minute == 59 and now.hour != last_trigger_hour and now.second >= 5:
-                    last_trigger_hour = now.hour
-                    print(f"\n[{now.strftime('%H:%M:%S')}] Stats Collector: Minute 59 Trigger: Scanning for upcoming funding events...")
-                    
-                    response = session.get_tickers(category="linear")
-                    if response.get("retCode") == 0:
-                        tickers = response["result"]["list"]
-                        now_ms = int(time.time() * 1000)
-                        
-                        upcoming = []
-                        for it in tickers:
-                            if not it.get("symbol", "").endswith("USDT"):
-                                continue
-                            
-                            rate_pct = float(it.get("fundingRate") or 0) * 100
-                            if abs(rate_pct) < MIN_FUNDING_THRESHOLD:
-                                continue
-
-                            ft = int(it.get("nextFundingTime") or 0)
-                            if 0 < (ft - now_ms) <= 120000:
-                                upcoming.append(it)
-                        
-                        if upcoming:
-                            ft_groups = {}
-                            for it in upcoming:
-                                ft = int(it["nextFundingTime"])
-                                ft_key = (ft // 10000) * 10000
-                                if ft_key not in ft_groups:
-                                    ft_groups[ft_key] = []
-                                ft_groups[ft_key].append(it)
-                            
-                            for ft_ms, items in ft_groups.items():
-                                if ft_ms in active_batches:
-                                    continue
-                                
-                                batch = stats_funding.FundingBatch(ft_ms)
-                                print(f"[{now.strftime('%H:%M:%S')}] Stats Collector: Event detected for {batch.funding_time_dt.strftime('%Y-%m-%d %H:%M:%S')}. Processing {len(items)} symbols.")
-                                
-                                items.sort(key=lambda x: abs(float(x.get("fundingRate") or 0)), reverse=True)
-                                target_items = items[:150]
-                                
-                                seen_symbols = set()
-                                for idx, it in enumerate(target_items):
-                                    if not getattr(self, "collect_funding_stats", False):
-                                        break
-                                    symbol = it["symbol"]
-                                    if symbol in seen_symbols:
-                                        continue
-                                    seen_symbols.add(symbol)
-                                    
-                                    try:
-                                        price = float(it.get("lastPrice") or 0)
-                                        rate = float(it.get("fundingRate") or 0) * 100
-                                        vol24h = float(it.get("volume24h") or 0)
-                                        ch24h = float(it.get("price24hPcnt") or 0) * 100
-                                        
-                                        adv = stats_funding.get_advanced_stats(session, symbol, price, it)
-                                        batch.add_coin(symbol, rate, vol24h, price, ch24h, adv)
-                                        
-                                        time.sleep(0.15) 
-                                        
-                                        if (idx + 1) % 20 == 0:
-                                            print(f"  Processed {idx + 1}/{len(target_items)} coins...")
-                                    except Exception as e:
-                                        print(f"Error gathering stats for {symbol}: {e}")
-                                
-                                active_batches[ft_ms] = batch
-                                print(f"[{datetime.now(kyiv_tz).strftime('%H:%M:%S')}] Stats Collector: Batch {batch.funding_time_dt.strftime('%Y-%m-%d %H:%M:%S')} initialization complete.")
-                        else:
-                            print(f"[{now.strftime('%H:%M:%S')}] Stats Collector: No coins found with funding in the next 2 minutes.")
-                    else:
-                        print(f"API Error fetching tickers: {response.get('retMsg')}")
-                        last_trigger_hour = -1
-
-                # 2. Update Prices for Active Batches
-                if active_batches:
-                    now_ms = int(time.time() * 1000)
-                    needs_update = False
-                    for ft_ms, batch in active_batches.items():
-                        elapsed = (now_ms - ft_ms) / 1000.0
-                        time_to_funding = (ft_ms - now_ms) / 1000.0
-                        if (elapsed >= 60 and "1m" not in batch.captured_stages) or \
-                           (elapsed >= 300 and "5m" not in batch.captured_stages) or \
-                           (elapsed >= 600 and "10m" not in batch.captured_stages) or \
-                           (0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages):
-                            needs_update = True
-                            break
-                    
-                    if needs_update:
-                        response = session.get_tickers(category="linear")
-                        if response.get("retCode") == 0:
-                            tickers = response["result"]["list"]
-                            
-                            completed_keys = []
-                            for ft_ms, batch in active_batches.items():
-                                elapsed_sec = (now_ms - ft_ms) / 1000.0
-                                time_to_funding = (ft_ms - now_ms) / 1000.0
-                                if 0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages:
-                                    batch.update_prices(tickers, "pre5s")
-                                if elapsed_sec >= 60 and "1m" not in batch.captured_stages:
-                                    batch.update_prices(tickers, "1m")
-                                if elapsed_sec >= 300 and "5m" not in batch.captured_stages:
-                                    batch.update_prices(tickers, "5m")
-                                if elapsed_sec >= 600 and "10m" not in batch.captured_stages:
-                                    batch.update_prices(tickers, "10m")
-                                    batch.save_to_csv()
-                                    completed_keys.append(ft_ms)
-                                    QTimer.singleShot(0, self._update_observation_table)
-                            
-                            for k in completed_keys:
-                                del active_batches[k]
-
-                time.sleep(2)
-
-            except Exception as e:
-                print(f"Stats Collector Main Loop Error: {e}")
-                time.sleep(5)
-
     def _open_stats_input_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Запис нової угоди")
@@ -2200,6 +2106,9 @@ class FundingTraderApp(QMainWindow):
 
     def closeEvent(self, event):
         self._global_scan_timer.stop()  
+        if hasattr(self, "_observation_refresh_timer"):
+            self._observation_refresh_timer.stop()
+        self._stop_funding_stats_process()
         for td in self.tab_data_list:
             for timer_key in ("timer", "funding_refresh_timer", "ping_timer"):
                 td[timer_key].stop()
