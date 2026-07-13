@@ -72,6 +72,7 @@ U will see that window:
 
 ![image](images/Screenshot.png)
 
+![image](images/1Screenshot.png)
 Credits
 
 Lead Developer - Oleg Shapran (@Smilelife1177) (shapran1177@gmail.com)
