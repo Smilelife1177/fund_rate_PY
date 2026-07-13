@@ -78,6 +78,8 @@ translations = {
         "disable_trades_checkbox": "BLOCK ALL FUNDING TRADES",
         "observation_tab_title": "Observation",
         "collect_stats_checkbox": "Enable funding stats collection",
+        "observation_analysis_btn": "Analysis",
+        "observation_analysis_title": "Funding Statistics Analysis",
     },
     "uk": {
         "window_title": "{} Трейдер Фінансування",
@@ -157,5 +159,7 @@ translations = {
         "disable_trades_checkbox": "БЛОКУВАТИ ВСІ УГОДИ ПО ФАНДИНГУ",
         "observation_tab_title": "Спостереження",
         "collect_stats_checkbox": "Увімкнути збирання статистики фандингу",
+        "observation_analysis_btn": "Аналіз",
+        "observation_analysis_title": "Аналіз статистики фандингу",
     }
 }

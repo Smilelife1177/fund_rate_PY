@@ -48,6 +48,7 @@ import stats_manager as stats
 from auto_scanner import scan_funding_opportunities, format_funding_time
 from tab_data import build_tab_data
 import stats_funding
+from funding_analysis import FundingAnalysisDialog
 
 # ---------------------------------------------------------------------------
 # Допоміжні класи
@@ -310,6 +311,10 @@ class FundingTraderApp(QMainWindow):
         self.observation_refresh_btn.clicked.connect(self._update_observation_table)
         btn_row.addWidget(self.observation_refresh_btn)
 
+        self.observation_analysis_btn = QPushButton(self.trans["observation_analysis_btn"])
+        self.observation_analysis_btn.clicked.connect(self._open_funding_analysis)
+        btn_row.addWidget(self.observation_analysis_btn)
+
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -390,6 +395,14 @@ class FundingTraderApp(QMainWindow):
         self.collect_funding_stats = (state == Qt.CheckState.Checked.value)
         self._update_collect_stats_checkbox_style()
         self._save()
+
+    def _open_funding_analysis(self):
+        dialog = FundingAnalysisDialog(
+            stats_funding.STATS_FILE,
+            title=self.trans["observation_analysis_title"],
+            parent=self,
+        )
+        dialog.exec()
 
     def _update_observation_table(self):
         self.observation_table.blockSignals(True)
@@ -2091,6 +2104,7 @@ class FundingTraderApp(QMainWindow):
         # Оновлення вкладки Спостереження
         self._update_collect_stats_checkbox_style()
         self.observation_refresh_btn.setText(self.trans["refresh_button"])
+        self.observation_analysis_btn.setText(self.trans["observation_analysis_btn"])
 
         obs_idx = -1
         for i in range(self.tab_widget.count()):
