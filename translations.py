@@ -6,7 +6,6 @@ translations = {
         "reverse_side_checkbox": "Invert Buy/Sell based on funding rate",
         "stop_loss_enabled_label": "Enable Stop Loss:",
         "stop_loss_enabled_checkbox": "Enable Stop Loss",
-        "exchange_label": "Exchange:",
         "testnet_label": "Testnet Mode:",
         "testnet_checkbox": "Enable Testnet",
         "coin_input_label": "Enter Coin (e.g., BTCUSDT):",
@@ -83,7 +82,6 @@ translations = {
     },
     "uk": {
         "window_title": "{} Трейдер Фінансування",
-        "exchange_label": "Біржа:",
         "reverse_side_label": "Розвернути логіку сторін",
         "reverse_side_checkbox": "інвертувати Купівлю/Продаж",
         "stop_loss_enabled_label": "Увімкнути стоп-лосс:",

@@ -46,14 +46,14 @@ def build_tab_data(settings: dict, session=None, testnet=None, exchange=None) ->
     state.update(settings)
 
     # Явні аргументи перезаписують settings
-    if exchange is not None:
-        state["exchange"] = exchange
+    # Binance settings from older versions are intentionally migrated to Bybit.
+    # The app currently supports one exchange only.
+    state["exchange"] = "Bybit"
     if testnet is not None:
         state["testnet"] = testnet
 
-    # Дефолтний інтервал фандингу залежить від біржі
     if "funding_interval_hours" not in settings:
-        state["funding_interval_hours"] = 1.0 if state["exchange"] == "Bybit" else 8.0
+        state["funding_interval_hours"] = 1.0
 
     state["session"] = session or initialize_client(state["exchange"], state["testnet"])
     return state

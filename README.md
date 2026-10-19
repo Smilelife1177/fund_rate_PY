@@ -6,11 +6,11 @@ FUNDING RATE
 
 [![Python Version](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)[![Issues](https://img.shields.io/github/issues/Smilelife1177/fund_rate_PY.svg)](https://github.com/Smilelife1177/fund_rate_PY/issues)[![Last Commit](https://img.shields.io/github/last-commit/Smilelife1177/fund_rate_PY/main.svg)](https://github.com/username/repo/commits/main)
 
-A Python-based tool to earn motions when updating the funding rate on different exchanges
+A Python desktop tool for monitoring and trading Bybit USDT perpetual funding events.
 
 Key features:
 
-- Real-time funding rate tracking for Bybit and Binance.
+- Real-time funding rate tracking for Bybit.
 - Support for both mainnet and testnet API keys.
 - Simple setup with a batch script for launching the application.
 - Calculation of setting a limit application
@@ -60,10 +60,6 @@ BYBIT_API_KEY =your api
 BYBIT_API_SECRET =your api
 BYBIT_API_KEY_TEST =your api
 BYBIT_API_SECRET_TEST =your api
-BINANCE_API_KEY =your api
-BINANCE_API_SECRET =your api
-BINANCE_API_KEY_TEST =your api
-BINANCE_API_SECRET_TEST =your api
 ```
 
 Run code by pressing "F5"

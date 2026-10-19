@@ -650,7 +650,6 @@ class FundingTraderApp(QMainWindow):
         left.setFixedWidth(320)
         left_l = QVBoxLayout(left)
         left_l.setContentsMargins(0, 0, 0, 0)
-        self._add_exchange_ui(left_l, tab_data)
         self._add_testnet_ui(left_l, tab_data)
         self._add_coin_ui(left_l, tab_data)
         self._add_entry_time_ui(left_l, tab_data)
@@ -687,17 +686,6 @@ class FundingTraderApp(QMainWindow):
         layout.addLayout(hbox)
 
     # ---- Ліва панель: окремі UI-блоки --------------------------------- #
-
-    def _add_exchange_ui(self, layout, tab_data):
-        label = QLabel(self.trans["exchange_label"])
-        combo = QComboBox()
-        combo.addItems(["Bybit", "Binance"])
-        combo.setCurrentText(tab_data["exchange"])
-        combo.currentTextChanged.connect(lambda v: self._on_exchange_changed(tab_data, v))
-        layout.addWidget(label)
-        layout.addWidget(combo)
-        tab_data["exchange_label"] = label
-        tab_data["exchange_combobox"] = combo
 
     def _add_testnet_ui(self, layout, tab_data):
         label = QLabel(self.trans["testnet_label"])
@@ -1800,17 +1788,6 @@ class FundingTraderApp(QMainWindow):
         rounded = math.floor(qty / qty_step) * qty_step
         return round(rounded, decimal_places)
 
-    def _on_exchange_changed(self, tab_data, exchange):
-        if tab_data not in self.tab_data_list:
-            return
-        tab_data["exchange"] = exchange
-        self._refresh_web_view(tab_data)
-        tab_data["funding_interval_hours"] = 1.0 if exchange == "Bybit" else 8.0
-        tab_data["session"] = initialize_client(exchange, tab_data["testnet"])
-        self._save()
-        self._update_tab_funding_data(tab_data)
-        # self._recalculate_auto_qty(tab_data)
-
     def _on_testnet_changed(self, tab_data, state):
         if tab_data not in self.tab_data_list:
             return
@@ -2025,7 +2002,6 @@ class FundingTraderApp(QMainWindow):
     def _update_tab_labels(self, tab_data):
         t = self.trans
         mappings = {
-            "exchange_label":            t["exchange_label"],
             "testnet_label":             t["testnet_label"],
             "reverse_side_label":        t["reverse_side_label"],
             "coin_input_label":          t["coin_input_label"],

@@ -4,51 +4,31 @@ from dotenv import load_dotenv
 import math
 import time
 from pybit.unified_trading import HTTP
-from binance.client import Client as BinanceClient
 
-def initialize_client(exchange, testnet=False):
+def initialize_client(exchange="Bybit", testnet=False):
+    if exchange != "Bybit":
+        raise ValueError("Only Bybit is supported")
     load_dotenv()
-    if exchange == "Bybit":
-        if testnet:
-            api_key = os.getenv('BYBIT_API_KEY_TEST')
-            api_secret = os.getenv('BYBIT_API_SECRET_TEST')
-        else:
-            api_key = os.getenv('BYBIT_API_KEY')
-            api_secret = os.getenv('BYBIT_API_SECRET')
-        if not api_key or not api_secret:
-            raise ValueError("Bybit API key or secret not found in environment variables")
-        return HTTP(testnet=testnet, api_key=api_key, api_secret=api_secret)
-    else:  # Binance
-        if testnet:
-            api_key = os.getenv('BINANCE_API_KEY_TEST')
-            api_secret = os.getenv('BINANCE_API_SECRET_TEST')
-        else:
-            api_key = os.getenv('BINANCE_API_KEY')
-            api_secret = os.getenv('BINANCE_API_SECRET')
-        if not api_key or not api_secret:
-            raise ValueError("Binance API key or secret not found in environment variables")
-        return BinanceClient(api_key, api_secret, testnet=testnet)
+    if testnet:
+        api_key = os.getenv('BYBIT_API_KEY_TEST')
+        api_secret = os.getenv('BYBIT_API_SECRET_TEST')
+    else:
+        api_key = os.getenv('BYBIT_API_KEY')
+        api_secret = os.getenv('BYBIT_API_SECRET')
+    if not api_key or not api_secret:
+        raise ValueError("Bybit API key or secret not found in environment variables")
+    return HTTP(testnet=testnet, api_key=api_key, api_secret=api_secret)
 
 def get_account_balance(session, exchange):
     try:
         print("Fetching account balance...")
-        if exchange == "Bybit":
-            response = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
-            if response["retCode"] == 0 and response["result"]["list"]:
-                balance = float(response["result"]["list"][0]["coin"][0]["walletBalance"])
-                print(f"Account balance: {balance:.2f} USDT")
-                return balance
-            else:
-                print(f"Error fetching balance: {response['retMsg']}")
-                return None
-        else:  # Binance
-            response = session.get_account()
-            for asset in response["balances"]:
-                if asset["asset"] == "USDT":
-                    balance = float(asset["free"]) + float(asset["locked"])
-                    print(f"Account balance: {balance:.2f} USDT")
-                    return balance
-            print("USDT balance not found")
+        response = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
+        if response["retCode"] == 0 and response["result"]["list"]:
+            balance = float(response["result"]["list"][0]["coin"][0]["walletBalance"])
+            print(f"Account balance: {balance:.2f} USDT")
+            return balance
+        else:
+            print(f"Error fetching balance: {response['retMsg']}")
             return None
     except Exception as e:
         print(f"Error fetching balance: {e}")
@@ -58,33 +38,20 @@ def get_funding_data(session, symbol, exchange):
     """Fetch current (live) funding rate and next funding time via tickers endpoint."""
     try:
         print(f"Fetching funding rate for {symbol}...")
-        if exchange == "Bybit":
-            response = session.get_tickers(category="linear", symbol=symbol)
-            if response["retCode"] == 0 and response["result"]["list"]:
-                ticker = response["result"]["list"][0]
-                funding_rate = float(ticker["fundingRate"]) * 100
-                # nextFundingTime is ms timestamp
-                next_ft_ms = int(ticker.get("nextFundingTime") or 0)
-                funding_time = next_ft_ms / 1000.0
-                print(f"Funding rate for {symbol}: {funding_rate:.4f}%, next at {funding_time}")
-                return {
-                    "symbol": symbol,
-                    "funding_rate": funding_rate,
-                    "funding_time": funding_time
-                }
-            else:
-                print(f"Error fetching funding rate: {response['retMsg']}")
-                return None
-        else:  # Binance
-            response = session.get_premium_index(symbol=symbol)
-            funding_rate = float(response["lastFundingRate"]) * 100
-            funding_time = int(response["nextFundingTime"]) / 1000
+        response = session.get_tickers(category="linear", symbol=symbol)
+        if response["retCode"] == 0 and response["result"]["list"]:
+            ticker = response["result"]["list"][0]
+            funding_rate = float(ticker["fundingRate"]) * 100
+            next_ft_ms = int(ticker.get("nextFundingTime") or 0)
+            funding_time = next_ft_ms / 1000.0
             print(f"Funding rate for {symbol}: {funding_rate:.4f}%, next at {funding_time}")
             return {
                 "symbol": symbol,
                 "funding_rate": funding_rate,
                 "funding_time": funding_time
             }
+        print(f"Error fetching funding rate: {response['retMsg']}")
+        return None
     except Exception as e:
         print(f"Error fetching funding rate: {e}")
         return None
@@ -92,20 +59,13 @@ def get_funding_data(session, symbol, exchange):
 def get_current_price(session, symbol, exchange):
     try:
         print(f"Fetching current price for {symbol}...")
-        if exchange == "Bybit":
-            response = session.get_tickers(category="linear", symbol=symbol)
-            if response["retCode"] == 0 and response["result"]["list"]:
-                price = float(response["result"]["list"][0]["lastPrice"])
-                print(f"Raw price fetched for {symbol}: {price}")
-                return price
-            else:
-                print(f"Error fetching price: {response['retMsg']}")
-                return None
-        else:  # Binance
-            response = session.get_symbol_ticker(symbol=symbol)
-            price = float(response["price"])
+        response = session.get_tickers(category="linear", symbol=symbol)
+        if response["retCode"] == 0 and response["result"]["list"]:
+            price = float(response["result"]["list"][0]["lastPrice"])
             print(f"Raw price fetched for {symbol}: {price}")
             return price
+        print(f"Error fetching price: {response['retMsg']}")
+        return None
     except Exception as e:
         print(f"Error fetching price: {e}")
         return None
@@ -114,25 +74,13 @@ def get_candle_open_price(session, symbol, exchange):
     """Fetch the open price of the latest 1-minute candle."""
     try:
         print(f"Fetching 1-minute candle open price for {symbol}...")
-        if exchange == "Bybit":
-            response = session.get_kline(
-                category="linear",
-                symbol=symbol,
-                interval="1",
-                limit=1
-            )
-            if response["retCode"] == 0 and response["result"]["list"]:
-                open_price = float(response["result"]["list"][0][1])  # Open price is second element in kline
-                print(f"1-minute candle open price for {symbol}: {open_price}")
-                return open_price
-            else:
-                print(f"Error fetching candle data: {response['retMsg']}")
-                return None
-        else:  # Binance
-            response = session.get_klines(symbol=symbol, interval="1m", limit=1)
-            open_price = float(response[0][1])  # Open price is second element in kline
+        response = session.get_kline(category="linear", symbol=symbol, interval="1", limit=1)
+        if response["retCode"] == 0 and response["result"]["list"]:
+            open_price = float(response["result"]["list"][0][1])
             print(f"1-minute candle open price for {symbol}: {open_price}")
             return open_price
+        print(f"Error fetching candle data: {response['retMsg']}")
+        return None
     except Exception as e:
         print(f"Error fetching candle open price: {e}")
         return None
@@ -146,35 +94,17 @@ def place_stop_loss_order(session, symbol, side, qty, stop_price, tick_size, exc
             decimal_places = abs(int(math.log10(tick_size)))
             stop_price = round(stop_price, decimal_places)
         print(f"Placing stop-loss {close_side} order for {symbol} at {stop_price} with quantity {qty}...")
-        if exchange == "Bybit":
-            response = session.place_order(
-                category="linear",
-                symbol=symbol,
-                side=close_side,
-                orderType="Market",
-                qty=str(qty),
-                stopPrice=str(stop_price),
-                triggerDirection=1 if side == "Buy" else 2,
-                timeInForce="GTC",
-                reduceOnly=True
-            )
-            if response["retCode"] == 0:
-                print(f"Stop-loss order placed: {response['result']}")
-                return response["result"]["orderId"]
-            else:
-                print(f"Error placing stop-loss order: {response['retMsg']}")
-                return None
-        else:  # Binance
-            response = session.create_order(
-                symbol=symbol,
-                side=close_side.upper(),
-                type="STOP_MARKET",
-                quantity=qty,
-                stopPrice=str(stop_price),
-                reduceOnly=True
-            )
-            print(f"Stop-loss order placed: {response}")
-            return response["orderId"]
+        response = session.place_order(
+            category="linear", symbol=symbol, side=close_side, orderType="Market",
+            qty=str(qty), stopPrice=str(stop_price),
+            triggerDirection=1 if side == "Buy" else 2,
+            timeInForce="GTC", reduceOnly=True,
+        )
+        if response["retCode"] == 0:
+            print(f"Stop-loss order placed: {response['result']}")
+            return response["result"]["orderId"]
+        print(f"Error placing stop-loss order: {response['retMsg']}")
+        return None
     except Exception as e:
         print(f"Error placing stop-loss order: {e}")
         return None
@@ -184,16 +114,11 @@ def get_optimal_limit_price(session, symbol, side, current_price, exchange, prof
     try:
         print(f"Fetching order book for {symbol} to determine optimal limit price (inverted: {is_inverted})...")
 
-        if exchange == "Bybit":
-            response = session.get_orderbook(category="linear", symbol=symbol, limit=50)
-            if response["retCode"] != 0 or not response["result"]:
-                return None
-            bids = [(float(p), float(q)) for p, q in response["result"]["b"]]
-            asks = [(float(p), float(q)) for p, q in response["result"]["a"]]
-        else:  # Binance
-            response = session.get_order_book(symbol=symbol, limit=50)
-            bids = [(float(p), float(q)) for p, q in response["bids"]]
-            asks = [(float(p), float(q)) for p, q in response["asks"]]
+        response = session.get_orderbook(category="linear", symbol=symbol, limit=50)
+        if response["retCode"] != 0 or not response["result"]:
+            return None
+        bids = [(float(p), float(q)) for p, q in response["result"]["b"]]
+        asks = [(float(p), float(q)) for p, q in response["result"]["a"]]
 
         # Напрямок залежить від інверсії: OFF -> вниз (-), ON -> вгору (+)
         direction = 1 if is_inverted else -1
@@ -270,82 +195,44 @@ def place_market_order(session, symbol, side, qty, exchange):
         
         print(f"Placing market {side} order for {symbol} with quantity {rounded_qty} (original: {qty}, step: {qty_step})...")
         
-        if exchange == "Bybit":
-            response = session.place_order(
-                category="linear",
-                symbol=symbol,
-                side=side,
-                orderType="Market",
-                qty=str(rounded_qty),
-                timeInForce="GTC"
-            )
-            if response["retCode"] == 0:
-                print(f"Market order placed: {response['result']}")
-                return response["result"]["orderId"]
-            else:
-                print(f"Error placing market order: {response['retMsg']}")
-                return None
-        else:  # Binance
-            response = session.create_order(
-                symbol=symbol,
-                side=side.upper(),
-                type="MARKET",
-                quantity=qty
-            )
-            print(f"Market order placed: {response}")
-            return response["orderId"]
+        response = session.place_order(
+            category="linear", symbol=symbol, side=side, orderType="Market",
+            qty=str(rounded_qty), timeInForce="GTC",
+        )
+        if response["retCode"] == 0:
+            print(f"Market order placed: {response['result']}")
+            return response["result"]["orderId"]
+        print(f"Error placing market order: {response['retMsg']}")
+        return None
     except Exception as e:
         print(f"Error placing market order: {e}")
         return None
 
 def get_symbol_info(session, symbol, exchange):
     try:
-        if exchange == "Bybit":
-            response = session.get_instruments_info(category="linear", symbol=symbol)
-            if response["retCode"] == 0 and response["result"]["list"]:
-                price_filter = response["result"]["list"][0]["priceFilter"]
-                tick_size = float(price_filter["tickSize"])
-                print(f"Tick size for {symbol}: {tick_size}")
-                return tick_size
-            else:
-                print(f"Error fetching symbol info: {response['retMsg']}")
-                return None
-        else:  # Binance
-            response = session.get_symbol_info(symbol)
-            for filt in response["filters"]:
-                if filt["filterType"] == "PRICE_FILTER":
-                    tick_size = float(filt["tickSize"])
-                    print(f"Tick size for {symbol}: {tick_size}")
-                    return tick_size
-            print("Price filter not found")
-            return None
+        response = session.get_instruments_info(category="linear", symbol=symbol)
+        if response["retCode"] == 0 and response["result"]["list"]:
+            price_filter = response["result"]["list"][0]["priceFilter"]
+            tick_size = float(price_filter["tickSize"])
+            print(f"Tick size for {symbol}: {tick_size}")
+            return tick_size
+        print(f"Error fetching symbol info: {response['retMsg']}")
+        return None
     except Exception as e:
         print(f"Error fetching symbol info: {e}")
         return None
 
 def get_order_execution_price(session, symbol, order_id, exchange):
     try:
-        if exchange == "Bybit":
-            response = session.get_order_history(category="linear", symbol=symbol, orderId=order_id)
-            if response["retCode"] != 0 or not response["result"]["list"]:
-                print(f"Error fetching order execution price for {symbol}: {response['retMsg']}")
-                return None, None
-            order = response["result"]["list"][0]
-            execution_price = float(order.get("avgPrice", 0.0))
-            # Отримуємо час виконання у форматі %Y-%m-%d %H:%M
-            exec_time_ms = int(order.get("updatedTime") or order.get("createdTime") or 0)
-            execution_time_str = datetime.fromtimestamp(exec_time_ms / 1000).strftime("%Y-%m-%d %H:%M")
-            return (execution_price, execution_time_str) if execution_price > 0 else (None, None)
-        else:  # Binance
-            response = session.get_order(symbol=symbol, orderId=order_id)
-            if "avgPrice" in response:
-                execution_price = float(response["avgPrice"])
-                exec_time_ms = int(response.get("time", 0))
-                execution_time_str = datetime.fromtimestamp(exec_time_ms / 1000).strftime("%Y-%m-%d %H:%M")
-                return (execution_price, execution_time_str) if execution_price > 0 else (None, None)
-            else:
-                print(f"Error fetching order execution price for {symbol}: No avgPrice in response")
-                return None, None
+        response = session.get_order_history(category="linear", symbol=symbol, orderId=order_id)
+        if response["retCode"] != 0 or not response["result"]["list"]:
+            print(f"Error fetching order execution price for {symbol}: {response['retMsg']}")
+            return None, None
+        order = response["result"]["list"][0]
+        execution_price = float(order.get("avgPrice", 0.0))
+        exec_time_ms = int(order.get("updatedTime") or order.get("createdTime") or 0)
+        execution_time_str = datetime.fromtimestamp(exec_time_ms / 1000).strftime("%Y-%m-%d %H:%M")
+        return (execution_price, execution_time_str) if execution_price > 0 else (None, None)
     except Exception as e:
         print(f"Error fetching order execution price for {symbol}: {e}")
         return None, None
@@ -363,99 +250,47 @@ def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchan
             
         print(f"Placing limit {close_side} order for {symbol} at {price} with quantity {rounded_qty}...")
         
-        if exchange == "Bybit":
-            response = session.place_order(
-                category="linear",
-                symbol=symbol,
-                side=close_side,
-                orderType="Limit",
-                qty=str(rounded_qty),
-                price=str(price),
-                timeInForce="GTC",
-                reduceOnly=True
-            )
-            if response["retCode"] == 0:
-                print(f"Limit close order placed: {response['result']}")
-                return response["result"]["orderId"]
-            else:
-                print(f"Error placing limit order: {response['retMsg']}")
-                return None
-        else:  # Binance
-            response = session.create_order(
-                symbol=symbol,
-                side=close_side.upper(),
-                type="LIMIT",
-                quantity=qty,
-                price=str(price),
-                timeInForce="GTC",
-                reduceOnly=True
-            )
-            print(f"Limit close order placed: {response}")
-            return response["orderId"]
+        response = session.place_order(
+            category="linear", symbol=symbol, side=close_side, orderType="Limit",
+            qty=str(rounded_qty), price=str(price), timeInForce="GTC", reduceOnly=True,
+        )
+        if response["retCode"] == 0:
+            print(f"Limit close order placed: {response['result']}")
+            return response["result"]["orderId"]
+        print(f"Error placing limit order: {response['retMsg']}")
+        return None
     except Exception as e:
         print(f"Error placing limit order: {e}")
         return None
 
 def close_all_positions(session, exchange, symbol=None):
-    """Close all open positions on the exchange."""
+    """Close all open Bybit positions, optionally for a single symbol."""
     try:
         qty_step = get_qty_step(session, symbol, exchange)
         qty = round_qty(qty, qty_step)
         print(f"Closing all open positions on {exchange}...")
-        if exchange == "Bybit":
-            response = session.get_positions(category="linear", settleCoin="USDT")
-            print(f"Bybit positions response: {response}")
-            if response["retCode"] == 0 and response["result"]["list"]:
-                for position in response["result"]["list"]:
-                    position_symbol = position["symbol"]
-                    if symbol and position_symbol != symbol:
-                        continue
-                    qty = float(position["size"])
-                    side = "Sell" if position["side"] == "Buy" else "Buy"
-                    if qty > 0:
-                        response_order = session.place_order(
-                            category="linear",
-                            symbol=position_symbol,
-                            side=side,
-                            orderType="Market",
-                            qty=str(qty),
-                            timeInForce="GTC",
-                            reduceOnly=True
-                        )
-                        if response_order["retCode"] == 0:
-                            print(f"Closed position for {position_symbol}: {response_order['result']}")
-                            time.sleep(1)  # Wait for execution
-                        if response_order["retCode"] == 0:
-                            print(f"Closed position for {position_symbol}: {response_order['result']}")
-                        else:
-                            print(f"Error closing position for {position_symbol}: {response_order['retMsg']}")
-                return True
-            else:
-                print(f"No open positions or error: {response.get('retMsg', 'No error message')}")
-                return False
-        else:  # Binance
-            response = session.get_position_information()
-            print(f"Binance positions response: {response}")
-            if response:
-                for position in response:
-                    position_symbol = position["symbol"]
-                    if symbol and position_symbol != symbol:
-                        continue
-                    qty = abs(float(position["positionAmt"]))
-                    side = "Sell" if float(position["positionAmt"]) > 0 else "Buy"
-                    if qty > 0:
-                        response_order = session.create_order(
-                            symbol=position_symbol,
-                            side=side.upper(),
-                            type="MARKET",
-                            quantity=qty,
-                            reduceOnly=True
-                        )
-                        print(f"Closed position for {position_symbol}: {response_order}")
-                return True
-            else:
-                print("No open positions found or error fetching positions")
-                return False
+        response = session.get_positions(category="linear", settleCoin="USDT")
+        print(f"Bybit positions response: {response}")
+        if response["retCode"] != 0 or not response["result"]["list"]:
+            print(f"No open positions or error: {response.get('retMsg', 'No error message')}")
+            return False
+        for position in response["result"]["list"]:
+            position_symbol = position["symbol"]
+            if symbol and position_symbol != symbol:
+                continue
+            qty = float(position["size"])
+            side = "Sell" if position["side"] == "Buy" else "Buy"
+            if qty > 0:
+                response_order = session.place_order(
+                    category="linear", symbol=position_symbol, side=side,
+                    orderType="Market", qty=str(qty), timeInForce="GTC", reduceOnly=True,
+                )
+                if response_order["retCode"] == 0:
+                    print(f"Closed position for {position_symbol}: {response_order['result']}")
+                    time.sleep(1)
+                else:
+                    print(f"Error closing position for {position_symbol}: {response_order['retMsg']}")
+        return True
     except Exception as e:
         print(f"Error closing positions: {e}")
         return False
@@ -464,23 +299,15 @@ def close_all_positions(session, exchange, symbol=None):
 def set_leverage(session, symbol, leverage, exchange):
     try:
         lev = int(leverage)
-        if exchange == "Bybit":
-            response = session.set_leverage(
-                category="linear",
-                symbol=symbol,
-                buyLeverage=str(lev),
-                sellLeverage=str(lev),
-            )
-            if response["retCode"] == 0:
-                print(f"Leverage set to {lev}x for {symbol}")
-                return True
-            else:
-                print(f"Error setting leverage: {response['retMsg']}")
-                return False
-        else:  # Binance
-            response = session.futures_change_leverage(symbol=symbol, leverage=lev)
+        response = session.set_leverage(
+            category="linear", symbol=symbol,
+            buyLeverage=str(lev), sellLeverage=str(lev),
+        )
+        if response["retCode"] == 0:
             print(f"Leverage set to {lev}x for {symbol}")
             return True
+        print(f"Error setting leverage: {response['retMsg']}")
+        return False
     except Exception as e:
         print(f"Error setting leverage: {e}")
         return False
@@ -490,24 +317,9 @@ def update_ping(session, ping_label, exchange):
     try:
         print(f"Pinging {exchange} server...")
         start_time = time.time()
-        if exchange == "Bybit":
-            response = session.get_server_time()
-            end_time = time.time()
-            if response["retCode"] == 0:
-                ping_ms = (end_time - start_time) * 1000
-                ping_label.setText(f"Ping: {ping_ms:.2f} ms")
-                if ping_ms > 500:
-                    ping_label.setStyleSheet("color: red;")
-                else:
-                    ping_label.setStyleSheet("color: black;")
-                print(f"Ping: {ping_ms:.2f} ms")
-            else:
-                ping_label.setText("Ping: Error")
-                ping_label.setStyleSheet("color: red;")
-                print(f"Error pinging server: {response['retMsg']}")
-        else:  # Binance
-            response = session.get_server_time()
-            end_time = time.time()
+        response = session.get_server_time()
+        end_time = time.time()
+        if response["retCode"] == 0:
             ping_ms = (end_time - start_time) * 1000
             ping_label.setText(f"Ping: {ping_ms:.2f} ms")
             if ping_ms > 500:
@@ -515,6 +327,10 @@ def update_ping(session, ping_label, exchange):
             else:
                 ping_label.setStyleSheet("color: black;")
             print(f"Ping: {ping_ms:.2f} ms")
+        else:
+            ping_label.setText("Ping: Error")
+            ping_label.setStyleSheet("color: red;")
+            print(f"Error pinging server: {response['retMsg']}")
     except Exception as e:
         ping_label.setText("Ping: Error")
         ping_label.setStyleSheet("color: red;")
@@ -523,16 +339,10 @@ def update_ping(session, ping_label, exchange):
 def get_qty_step(session, symbol, exchange):
     """Повертає мінімальний крок qty для символу."""
     try:
-        if exchange == "Bybit":
-            response = session.get_instruments_info(category="linear", symbol=symbol)
-            if response["retCode"] == 0 and response["result"]["list"]:
-                lot_filter = response["result"]["list"][0]["lotSizeFilter"]
-                return float(lot_filter["qtyStep"])
-        else:  # Binance
-            info = session.get_symbol_info(symbol)
-            for f in info["filters"]:
-                if f["filterType"] == "LOT_SIZE":
-                    return float(f["stepSize"])
+        response = session.get_instruments_info(category="linear", symbol=symbol)
+        if response["retCode"] == 0 and response["result"]["list"]:
+            lot_filter = response["result"]["list"][0]["lotSizeFilter"]
+            return float(lot_filter["qtyStep"])
         return None
     except Exception as e:
         print(f"Error fetching qty step: {e}")
@@ -659,10 +469,6 @@ def get_closed_trades(session, exchange, limit=50):
                 })
 
             return trades
-
-        else:
-            print("Binance import not implemented yet")
-            return []
 
     except Exception as e:
         print(f"Error fetching closed trades: {e}")
