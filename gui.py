@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QTextEdit, QAbstractItemView,
     QScrollBar,
 )
-from PyQt6.QtCore import QTimer, Qt, QUrl
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
@@ -35,7 +35,7 @@ from PyQt6.QtGui import QColor
 from logic import (
     get_account_balance, get_funding_data, get_current_price,
     get_next_funding_time, place_market_order, get_symbol_info,
-    place_limit_close_order, update_ping, initialize_client,
+    place_limit_close_order, initialize_client,
     close_all_positions, get_optimal_limit_price, get_candle_open_price,
     place_stop_loss_order, get_order_execution_price,
     set_leverage,
@@ -59,6 +59,28 @@ class SilentWebEnginePage(QWebEnginePage):
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
         # Порожній метод для придушення виводу в термінал
         pass
+
+
+class ApiWorkerSignals(QObject):
+    """Signals used to safely deliver a background API result to the UI thread."""
+
+    completed = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+
+class ApiWorker(QRunnable):
+    """Runs a blocking exchange request without blocking the Qt event loop."""
+
+    def __init__(self, task):
+        super().__init__()
+        self.task = task
+        self.signals = ApiWorkerSignals()
+
+    def run(self):
+        try:
+            self.signals.completed.emit(self.task())
+        except Exception as exc:
+            self.signals.failed.emit(str(exc))
 
 # ---------------------------------------------------------------------------
 # Головне вікно
@@ -1247,21 +1269,15 @@ class FundingTraderApp(QMainWindow):
                         tab_data["qty_spinbox"].setValue(qty)
                     # _save вже був викликаний в _on_symbol_changed, тут можна не дублювати
                     # Оновлюємо лейбли обсягу та профіту
-                    self._update_volume_label(tab_data)
-                    self._update_predicted_profit(tab_data)
+                    self._update_volume_label(tab_data, price, balance)
+                    self._update_predicted_profit(tab_data, price)
 
-                from PyQt6.QtCore import QThreadPool, QRunnable
-                class Worker(QRunnable):
-                    def __init__(self, fn, callback):
-                        super().__init__()
-                        self._fn = fn
-                        self._cb = callback
-                    def run(self):
-                        result = self._fn()
-                        # Повертаємось в головний потік через QTimer
-                        QTimer.singleShot(0, lambda: self._cb(result))
-
-                worker = Worker(_background_calc, _apply_results)
+                worker = ApiWorker(_background_calc)
+                tab_data["auto_calc_worker"] = worker
+                worker.signals.completed.connect(_apply_results)
+                worker.signals.failed.connect(
+                    lambda error: print(f"Background calc error: {error}")
+                )
                 QThreadPool.globalInstance().start(worker)
 
                 tab_data["auto_chosen_label"].setText(
@@ -1392,13 +1408,16 @@ class FundingTraderApp(QMainWindow):
         )
 
         if 0.5 <= time_to_funding <= 1.5 and tab_data["pre_funding_price"] is None:
-            tab_data["pre_funding_price"] = get_current_price(
-                tab_data["session"], symbol, tab_data["exchange"]
-            )
+            self._capture_pre_funding_price(tab_data, symbol)
 
         entry_window = tab_data["entry_time_seconds"]
 
-        if time_to_funding <= entry_window and time_to_funding > 0 and not tab_data["open_order_id"]:
+        if (
+            time_to_funding <= entry_window
+            and time_to_funding > 0
+            and not tab_data["open_order_id"]
+            and not tab_data.get("order_submission_in_progress")
+        ):
             if self.disable_trades_checkbox.isChecked():
                 print(f"[TRADING BLOCKED] Funding trade for {symbol} bypassed because Global Block is active.")
             else:
@@ -1407,16 +1426,7 @@ class FundingTraderApp(QMainWindow):
                     ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"]
                     else ("Buy" if rate > 0 else "Sell")
                 )
-                tab_data["open_order_id"] = place_market_order(
-                    tab_data["session"], symbol, side, tab_data["qty"], tab_data["exchange"]
-                )
-                if tab_data["open_order_id"]:
-                    tab_data["order_qty"] = tab_data["qty"]  # ← фіксуємо qty угоди
-                    tab_data["order_placed_this_cycle"] = True
-                    delay_ms = int((time_to_funding - 0.5) * 1000)
-                    delay_ms = max(0, delay_ms)  # не може бути від'ємним
-                    QTimer.singleShot(delay_ms, lambda: self._capture_funding_price(tab_data, symbol, side))
-                tab_data["pre_funding_price"] = None
+                self._submit_market_order(tab_data, symbol, side, time_to_funding)
 
         if time_to_funding <= 10:
             print(f"[COUNTDOWN] {symbol} time_to_funding={time_to_funding:.3f}s entry_window={tab_data['entry_time_seconds']}s order_id={tab_data['open_order_id']}")
@@ -1425,28 +1435,184 @@ class FundingTraderApp(QMainWindow):
         if tab_data.get("position_open") and tab_data["update_count"] % 10 == 0:
             self._check_position_status(tab_data)
 
-    def _check_position_status(self, tab_data):
-        try:
-            symbol = tab_data["selected_symbol"]
-            if tab_data["exchange"] == "Bybit":
-                pos = tab_data["session"].get_positions(category="linear", symbol=symbol)
-                if pos["retCode"] == 0:
-                    position = next(
-                        (p for p in pos["result"]["list"]
-                         if p["symbol"] == symbol and float(p["size"]) > 0),
-                        None,
-                    )
-            else:
-                pos = tab_data["session"].get_position_information(symbol=symbol)
-                position = next(
-                    (p for p in pos if p["symbol"] == symbol and abs(float(p["positionAmt"])) > 0),
-                    None,
+    def _capture_pre_funding_price(self, tab_data, symbol):
+        if tab_data.get("pre_funding_price_in_progress"):
+            return
+        tab_data["pre_funding_price_in_progress"] = True
+        session = tab_data["session"]
+        exchange = tab_data["exchange"]
+        worker = ApiWorker(lambda: get_current_price(session, symbol, exchange))
+        tab_data["pre_funding_price_worker"] = worker
+        worker.signals.completed.connect(
+            lambda price: self._apply_pre_funding_price(tab_data, price)
+        )
+        worker.signals.failed.connect(
+            lambda error: self._apply_pre_funding_price(tab_data, None, error)
+        )
+        QThreadPool.globalInstance().start(worker)
+
+    def _apply_pre_funding_price(self, tab_data, price, error=None):
+        tab_data["pre_funding_price_in_progress"] = False
+        tab_data.pop("pre_funding_price_worker", None)
+        if tab_data not in self.tab_data_list:
+            return
+        if error:
+            print(f"Could not capture pre-funding price: {error}")
+        tab_data["pre_funding_price"] = price
+
+    def _submit_market_order(self, tab_data, symbol, side, time_to_funding):
+        """Submit the entry order in the background without changing its trigger rules."""
+        tab_data["order_submission_in_progress"] = True
+        session = tab_data["session"]
+        exchange = tab_data["exchange"]
+        qty = tab_data["qty"]
+        started_at = time.monotonic()
+        worker = ApiWorker(lambda: place_market_order(session, symbol, side, qty, exchange))
+        tab_data["order_submission_worker"] = worker
+        worker.signals.completed.connect(
+            lambda order_id: self._apply_market_order(tab_data, symbol, side, qty, time_to_funding, started_at, order_id)
+        )
+        worker.signals.failed.connect(lambda error: self._handle_market_order_error(tab_data, error))
+        QThreadPool.globalInstance().start(worker)
+
+    def _apply_market_order(self, tab_data, symbol, side, qty, time_to_funding, started_at, order_id):
+        tab_data["order_submission_in_progress"] = False
+        tab_data.pop("order_submission_worker", None)
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["open_order_id"] = order_id
+        tab_data["pre_funding_price"] = None
+        if not order_id:
+            return
+        tab_data["order_qty"] = qty
+        tab_data["order_placed_this_cycle"] = True
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        delay_ms = max(0, int((time_to_funding - 0.5) * 1000) - elapsed_ms)
+        QTimer.singleShot(delay_ms, lambda: self._capture_funding_price_async(tab_data, symbol, side))
+
+    def _handle_market_order_error(self, tab_data, error):
+        tab_data["order_submission_in_progress"] = False
+        tab_data.pop("order_submission_worker", None)
+        print(f"Error submitting market order: {error}")
+
+    def _capture_funding_price_async(self, tab_data, symbol, side):
+        """Fetch execution data and submit the exit limit order outside the UI thread."""
+        if tab_data not in self.tab_data_list or tab_data.get("exit_order_in_progress"):
+            return
+        tab_data["exit_order_in_progress"] = True
+        session = tab_data["session"]
+        exchange = tab_data["exchange"]
+        order_id = tab_data["open_order_id"]
+        qty = tab_data.get("order_qty", tab_data["qty"])
+        profit_percentage = tab_data["profit_percentage"]
+        is_inverted = tab_data.get("reverse_side", False)
+        auto_limit = tab_data.get("auto_limit", False)
+
+        def create_exit_order():
+            entry_price, trade_open_time = get_order_execution_price(session, symbol, order_id, exchange)
+            if not entry_price:
+                return {"entry_price": None}
+            tick_size = get_symbol_info(session, symbol, exchange)
+            limit_price = entry_price * (1 + (1 if is_inverted else -1) * profit_percentage / 100)
+            if auto_limit:
+                optimal = get_optimal_limit_price(
+                    session, symbol, side, entry_price, exchange, profit_percentage,
+                    tick_size, is_inverted=is_inverted,
                 )
-            if not position:
-                tab_data["position_open"] = False
-                self._update_stats_table()
-        except Exception as e:
-            print(f"Error checking position: {e}")
+                if optimal and abs(abs((optimal - entry_price) / entry_price * 100) - profit_percentage) <= 0.20:
+                    limit_price = optimal
+            decimal_places = abs(int(math.log10(tick_size))) if tick_size else 4
+            if tick_size:
+                rounder = math.floor if side == "Buy" else math.ceil
+                limit_price = rounder(limit_price / tick_size) * tick_size
+            limit_price = round(limit_price, decimal_places)
+            close_order_id = place_limit_close_order(
+                session, symbol, side, qty, limit_price, tick_size, exchange
+            )
+            return {
+                "entry_price": entry_price,
+                "trade_open_time": trade_open_time,
+                "limit_price": limit_price,
+                "close_order_id": close_order_id,
+            }
+
+        worker = ApiWorker(create_exit_order)
+        tab_data["exit_order_worker"] = worker
+        worker.signals.completed.connect(lambda result: self._apply_exit_order(tab_data, symbol, result))
+        worker.signals.failed.connect(lambda error: self._handle_exit_order_error(tab_data, symbol, error))
+        QThreadPool.globalInstance().start(worker)
+
+    def _apply_exit_order(self, tab_data, symbol, result):
+        tab_data["exit_order_in_progress"] = False
+        tab_data.pop("exit_order_worker", None)
+        if tab_data not in self.tab_data_list:
+            return
+        entry_price = result["entry_price"]
+        if not entry_price:
+            print(f"Could not get entry price for {symbol}, order id: {tab_data['open_order_id']}")
+            tab_data["open_order_id"] = None
+            return
+        tab_data["position_open"] = True
+        tab_data["funding_time_price"] = entry_price
+        tab_data["limit_price"] = result["limit_price"]
+        print(f"Entry price for {symbol}: {entry_price} at {result['trade_open_time']}")
+        if not result["close_order_id"]:
+            print(f"Could not place profit limit order for {symbol}")
+            return
+        print(f"Profit limit order placed at {result['limit_price']}")
+        QTimer.singleShot(
+            5 * 60 * 1000,
+            lambda: self._auto_import_and_update_after_5m(
+                tab_data, symbol, entry_price, result["trade_open_time"]
+            ),
+        )
+        tab_data["open_order_id"] = None
+        QTimer.singleShot(1000, lambda: self._log_limit_price_diff(tab_data, symbol))
+
+    def _handle_exit_order_error(self, tab_data, symbol, error):
+        tab_data["exit_order_in_progress"] = False
+        tab_data.pop("exit_order_worker", None)
+        print(f"Error creating profit limit order for {symbol}: {error}")
+
+    def _check_position_status(self, tab_data):
+        if tab_data.get("position_check_in_progress"):
+            return
+        tab_data["position_check_in_progress"] = True
+        session = tab_data["session"]
+        symbol = tab_data["selected_symbol"]
+
+        def fetch_position():
+            response = session.get_positions(category="linear", symbol=symbol)
+            if response.get("retCode") != 0:
+                raise RuntimeError(response.get("retMsg", "Could not fetch positions"))
+            return any(
+                position["symbol"] == symbol and float(position["size"]) > 0
+                for position in response["result"]["list"]
+            )
+
+        worker = ApiWorker(fetch_position)
+        tab_data["position_check_worker"] = worker
+        worker.signals.completed.connect(
+            lambda is_open: self._apply_position_status(tab_data, is_open)
+        )
+        worker.signals.failed.connect(
+            lambda error: self._handle_position_status_error(tab_data, error)
+        )
+        QThreadPool.globalInstance().start(worker)
+
+    def _apply_position_status(self, tab_data, is_open):
+        tab_data["position_check_in_progress"] = False
+        tab_data.pop("position_check_worker", None)
+        if tab_data not in self.tab_data_list:
+            return
+        if not is_open:
+            tab_data["position_open"] = False
+            self._update_stats_table()
+
+    def _handle_position_status_error(self, tab_data, error):
+        tab_data["position_check_in_progress"] = False
+        tab_data.pop("position_check_worker", None)
+        print(f"Error checking position: {error}")
 
     def _capture_funding_price(self, tab_data, symbol, side):
         if tab_data not in self.tab_data_list:
@@ -1607,7 +1773,27 @@ class FundingTraderApp(QMainWindow):
         if msg.exec() != QMessageBox.StandardButton.Yes:
             return
 
-        success = close_all_positions(tab_data["session"], tab_data["exchange"], symbol=tab_data["selected_symbol"])
+        if tab_data.get("close_positions_in_progress"):
+            return
+        tab_data["close_positions_in_progress"] = True
+        session = tab_data["session"]
+        exchange = tab_data["exchange"]
+        symbol = tab_data["selected_symbol"]
+        worker = ApiWorker(lambda: close_all_positions(session, exchange, symbol=symbol))
+        tab_data["close_positions_worker"] = worker
+        worker.signals.completed.connect(
+            lambda success: self._apply_close_all_positions(tab_data, success)
+        )
+        worker.signals.failed.connect(
+            lambda error: self._handle_close_all_positions_error(tab_data, error)
+        )
+        QThreadPool.globalInstance().start(worker)
+
+    def _apply_close_all_positions(self, tab_data, success):
+        tab_data["close_positions_in_progress"] = False
+        tab_data.pop("close_positions_worker", None)
+        if tab_data not in self.tab_data_list:
+            return
         result = QMessageBox()
         if success:
             result.setWindowTitle("Успіх" if self.language == "uk" else "Success")
@@ -1619,65 +1805,107 @@ class FundingTraderApp(QMainWindow):
         result.exec()
         self._update_tab_funding_data(tab_data)
 
+    def _handle_close_all_positions_error(self, tab_data, error):
+        print(f"Error closing positions: {error}")
+        self._apply_close_all_positions(tab_data, False)
+
     # ------------------------------------------------------------------ #
     #  Оновлення даних вкладки                                            #
     # ------------------------------------------------------------------ #
 
     def _update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2, refresh_web=True):
+        """Refresh a tab without performing network I/O in the UI thread."""
         tab_data["order_placed_this_cycle"] = False
-        if tab_data not in self.tab_data_list:
+        if tab_data not in self.tab_data_list or tab_data.get("refresh_in_progress"):
             return
 
-        # Eco-Auto Mode optimization
         if tab_data.get("auto_mode") and tab_data.get("auto_eco_mode"):
             now = datetime.now(timezone.utc)
-            secs_into_hour = now.minute * 60 + now.second
-            secs_left = 3600 - secs_into_hour
-            if secs_left > 300: # Більше 5 хв до фандингу
-                # Пропускаємо важкі API запити, оновлюємо тільки пінг і UI статус
+            if 3600 - (now.minute * 60 + now.second) > 300:
                 self._update_ping(tab_data)
                 return
 
-        for attempt in range(retry_count):
-            try:
-                tab_data["funding_data"] = get_funding_data(
-                    tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"]
-                )
-                price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
-                tab_data["price_label"].setText(
-                    f"{self.trans['price_label'].split(':')[0]}: ${price:.6f}" if price else self.trans["price_label"]
-                )
-                balance = get_account_balance(tab_data["session"], tab_data["exchange"])
-                tab_data["balance_label"].setText(
-                    f"{self.trans['balance_label'].split(':')[0]}: ${balance:.2f} USDT" if balance else self.trans["balance_label"]
-                )
-                self._update_leveraged_balance(tab_data)
-                if tab_data["funding_data"]:
-                    rate = tab_data["funding_data"]["funding_rate"]
-                    _, time_str = get_next_funding_time(tab_data["funding_data"]["funding_time"], tab_data["funding_interval_hours"])
-                    tab_data["funding_info_label"].setText(
-                        f"{self.trans['funding_info_label'].split(':')[0]}: {rate:.4f}% | "
-                        f"{self.trans['funding_info_label'].split('|')[1].strip()}: {time_str}"
-                    )
-                else:
-                    self._reset_tab_labels(tab_data)
-                self._update_volume_label(tab_data)
-                self._update_predicted_profit(tab_data)
-                self._update_ping(tab_data)
-                if refresh_web:
-                    self._refresh_web_view(tab_data)
-                return
-            except Exception as e:
-                print(f"Error updating funding data (attempt {attempt + 1}): {e}")
-                if attempt < retry_count - 1:
-                    time.sleep(retry_delay)
-        self._set_tab_labels_error(tab_data)
+        tab_data["refresh_in_progress"] = True
+        session = tab_data["session"]
+        symbol = tab_data["selected_symbol"]
+        exchange = tab_data["exchange"]
 
-    def _update_volume_label(self, tab_data):
+        def fetch_data():
+            last_error = None
+            for attempt in range(retry_count):
+                try:
+                    started_at = time.monotonic()
+                    server_time = session.get_server_time()
+                    ping_ms = (time.monotonic() - started_at) * 1000
+                    return {
+                        "funding_data": get_funding_data(session, symbol, exchange),
+                        "price": get_current_price(session, symbol, exchange),
+                        "balance": get_account_balance(session, exchange),
+                        "ping_ms": ping_ms if server_time.get("retCode") == 0 else None,
+                    }
+                except Exception as exc:
+                    last_error = exc
+                    if attempt < retry_count - 1:
+                        time.sleep(retry_delay)
+            raise last_error or RuntimeError("Could not refresh tab data")
+
+        worker = ApiWorker(fetch_data)
+        tab_data["refresh_worker"] = worker
+        worker.signals.completed.connect(
+            lambda result: self._apply_tab_refresh(tab_data, result, refresh_web)
+        )
+        worker.signals.failed.connect(lambda error: self._handle_tab_refresh_error(tab_data, error))
+        QThreadPool.globalInstance().start(worker)
+
+    def _apply_tab_refresh(self, tab_data, result, refresh_web):
+        tab_data["refresh_in_progress"] = False
+        tab_data.pop("refresh_worker", None)
         if tab_data not in self.tab_data_list:
             return
-        price   = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
-        balance = get_account_balance(tab_data["session"], tab_data["exchange"])
+
+        funding_data = result["funding_data"]
+        price = result["price"]
+        balance = result["balance"]
+        tab_data["funding_data"] = funding_data
+        tab_data["last_price"] = price
+        tab_data["last_balance"] = balance
+
+        tab_data["price_label"].setText(
+            f"{self.trans['price_label'].split(':')[0]}: ${price:.6f}" if price else self.trans["price_label"]
+        )
+        tab_data["balance_label"].setText(
+            f"{self.trans['balance_label'].split(':')[0]}: ${balance:.2f} USDT" if balance else self.trans["balance_label"]
+        )
+        self._update_leveraged_balance(tab_data, balance)
+
+        if funding_data:
+            rate = funding_data["funding_rate"]
+            _, time_str = get_next_funding_time(funding_data["funding_time"], tab_data["funding_interval_hours"])
+            tab_data["funding_info_label"].setText(
+                f"{self.trans['funding_info_label'].split(':')[0]}: {rate:.4f}% | "
+                f"{self.trans['funding_info_label'].split('|')[1].strip()}: {time_str}"
+            )
+        else:
+            self._reset_tab_labels(tab_data)
+
+        self._update_volume_label(tab_data, price, balance)
+        self._update_predicted_profit(tab_data, price)
+        self._set_ping_label(tab_data, result["ping_ms"])
+        if refresh_web:
+            self._refresh_web_view(tab_data)
+
+    def _handle_tab_refresh_error(self, tab_data, error):
+        tab_data["refresh_in_progress"] = False
+        tab_data.pop("refresh_worker", None)
+        if tab_data in self.tab_data_list:
+            print(f"Error updating funding data: {error}")
+            self._set_tab_labels_error(tab_data)
+
+    def _update_volume_label(self, tab_data, price=None, balance=None):
+        if tab_data not in self.tab_data_list:
+            return
+        price = tab_data.get("last_price") if price is None else price
+        balance = tab_data.get("last_balance") if balance is None else balance
         leveraged = balance * tab_data["leverage"] if balance and tab_data["leverage"] else None
         if price and tab_data["qty"]:
             volume = tab_data["qty"] * price
@@ -1688,11 +1916,11 @@ class FundingTraderApp(QMainWindow):
             tab_data["volume_label"].setText(self.trans["volume_label"])
             tab_data["volume_label"].setStyleSheet("color: black;")
 
-    def _update_predicted_profit(self, tab_data):
+    def _update_predicted_profit(self, tab_data, price=None):
         if tab_data not in self.tab_data_list:
             return
         try:
-            price = get_current_price(tab_data["session"], tab_data["selected_symbol"], tab_data["exchange"])
+            price = tab_data.get("last_price") if price is None else price
             qty = tab_data.get("qty", 0)
             profit_pct = tab_data.get("profit_percentage", 0)
             
@@ -1729,10 +1957,10 @@ class FundingTraderApp(QMainWindow):
             tab_data["predicted_profit_label"].setText(self.trans["predicted_profit_label"])
 
 
-    def _update_leveraged_balance(self, tab_data):
+    def _update_leveraged_balance(self, tab_data, balance=None):
         if tab_data not in self.tab_data_list:
             return
-        balance = get_account_balance(tab_data["session"], tab_data["exchange"])
+        balance = tab_data.get("last_balance") if balance is None else balance
         if balance and tab_data["leverage"]:
             leveraged = balance * tab_data["leverage"]
             tab_data["leveraged_balance_label"].setText(
@@ -1744,7 +1972,42 @@ class FundingTraderApp(QMainWindow):
     def _update_ping(self, tab_data):
         if tab_data not in self.tab_data_list:
             return
-        update_ping(tab_data["session"], tab_data["ping_label"], tab_data["exchange"])
+        if tab_data.get("ping_in_progress"):
+            return
+        tab_data["ping_in_progress"] = True
+        session = tab_data["session"]
+
+        def fetch_ping():
+            started_at = time.monotonic()
+            response = session.get_server_time()
+            if response.get("retCode") != 0:
+                return None
+            return (time.monotonic() - started_at) * 1000
+
+        worker = ApiWorker(fetch_ping)
+        tab_data["ping_worker"] = worker
+        worker.signals.completed.connect(lambda ping_ms: self._apply_ping_result(tab_data, ping_ms))
+        worker.signals.failed.connect(lambda error: self._handle_ping_error(tab_data, error))
+        QThreadPool.globalInstance().start(worker)
+
+    def _apply_ping_result(self, tab_data, ping_ms):
+        tab_data["ping_in_progress"] = False
+        tab_data.pop("ping_worker", None)
+        if tab_data not in self.tab_data_list:
+            return
+        self._set_ping_label(tab_data, ping_ms)
+
+    def _set_ping_label(self, tab_data, ping_ms):
+        if ping_ms is None:
+            tab_data["ping_label"].setText("Ping: Error")
+            tab_data["ping_label"].setStyleSheet("color: red;")
+            return
+        tab_data["ping_label"].setText(f"Ping: {ping_ms:.2f} ms")
+        tab_data["ping_label"].setStyleSheet("color: red;" if ping_ms > 500 else "color: black;")
+
+    def _handle_ping_error(self, tab_data, error):
+        print(f"Error pinging server: {error}")
+        self._apply_ping_result(tab_data, None)
 
     def _reset_tab_labels(self, tab_data):
         t = self.trans
