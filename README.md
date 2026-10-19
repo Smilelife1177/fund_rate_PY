@@ -2,7 +2,7 @@
 
 ![Alt text](images/example.jpg)
 
-[![Python Version](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)[![License: GPL v3](<https://img.shields.io/badge/License-GPL%20v3-blue.svg>)](https://www.gnu.org/licenses/gpl-3.0)[![Issues](https://img.shields.io/github/issues/Smilelife1177/fund_rate_PY.svg)](https://github.com/Smilelife1177/fund_rate_PY/issues)[![Last Commit](https://img.shields.io/github/last-commit/Smilelife1177/fund_rate_PY/main.svg)](https://github.com/username/repo/commits/main)
+[![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)[![License: GPL v3](<https://img.shields.io/badge/License-GPL%20v3-blue.svg>)](https://www.gnu.org/licenses/gpl-3.0)[![Issues](https://img.shields.io/github/issues/Smilelife1177/fund_rate_PY.svg)](https://github.com/Smilelife1177/fund_rate_PY/issues)[![Last Commit](https://img.shields.io/github/last-commit/Smilelife1177/fund_rate_PY/main.svg)](https://github.com/username/repo/commits/main)
 
 Fund Rate PY is a PyQt6 desktop application for monitoring Bybit USDT perpetual funding rates and managing funding-based trades. It supports Bybit mainnet and testnet. Binance is not currently supported.
 
@@ -20,7 +20,7 @@ Fund Rate PY is a PyQt6 desktop application for monitoring Bybit USDT perpetual 
 ## Requirements
 
 - Windows, Linux, or macOS
-- Python 3.10 or newer
+- Python 3.9 or newer
 - Bybit API keys for the account and network mode you plan to use
 
 ## Installation
