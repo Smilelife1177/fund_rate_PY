@@ -156,39 +156,6 @@ def update_trade_after_5m(symbol: str, trade_datetime: str, change_pct: float, f
         return
 
     for i in range(1, len(rows)):
-        if rows[i][symbol_idx] == symbol and rows[i][time_idx] == trade_datetime:
-            rows[i][col_idx] = f"{change_pct:+.2f}%"
-            updated = True
-            break
-    
-    if updated:
-        with open(filepath, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerows(rows)
-    return updated
-
-def update_trade_after_5m(symbol: str, trade_datetime: str, change_pct: float, filepath: str = STATS_CSV_FILE):
-    """Оновлює поле Change%_after5m для конкретної угоди."""
-    if not os.path.exists(filepath):
-        return
-
-    rows = []
-    updated = False
-    with open(filepath, "r", encoding="utf-8") as f:
-        rows = list(csv.reader(f))
-
-    if not rows:
-        return
-
-    header = rows[0]
-    try:
-        col_idx = header.index("Change%_after5m")
-        time_idx = header.index("Дата_Час")
-        symbol_idx = header.index("Тикер")
-    except ValueError:
-        return
-
-    for i in range(1, len(rows)):
         # Шукаємо збіг по тикеру та часу
         # trade_datetime може бути трохи іншим через секунди, але зазвичай ми порівнюємо хвилини
         if rows[i][symbol_idx] == symbol and rows[i][time_idx] == trade_datetime:
