@@ -4,6 +4,8 @@ auto_scanner.py — логіка авто-сканування монет за �
 from datetime import datetime, timezone
 import requests
 
+MAX_FUNDING_HORIZON_SECS = 60 * 60
+
 
 def fetch_bybit_tickers(timeout: int = 8) -> list[dict] | None:
     """Отримує список тикерів лінійних контрактів з Bybit API."""
@@ -61,6 +63,9 @@ def scan_funding_opportunities(
             continue
 
         secs_to_funding = (next_ft_ms - now_ms) / 1000.0
+        if not 0 <= secs_to_funding <= MAX_FUNDING_HORIZON_SECS:
+            continue
+
         entry = {"symbol": symbol, "rate": rate_pct, "secs": secs_to_funding}
         all_above.append(entry)
 
