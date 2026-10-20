@@ -45,7 +45,11 @@ from logic import (
 from translations import translations
 import settings_manager as sm
 import stats_manager as stats
-from auto_scanner import scan_funding_opportunities, format_funding_time
+from auto_scanner import (
+    MAX_FUNDING_HORIZON_SECS,
+    scan_funding_opportunities,
+    format_funding_time,
+)
 from tab_data import build_tab_data
 import stats_funding
 from funding_analysis import FundingAnalysisDialog
@@ -1227,11 +1231,15 @@ class FundingTraderApp(QMainWindow):
                 return (0 if secs < 3600 else 1, secs)
 
             all_above_sorted = sorted(all_above, key=sort_key)
+            eligible = [
+                item for item in all_above_sorted
+                if 0 <= item.get("secs", float("inf")) <= MAX_FUNDING_HORIZON_SECS
+            ]
             tab_data["auto_scan_results"] = all_above_sorted
             self._update_auto_scan_table(tab_data)
 
             t = self.trans
-            best = near_now[0] if near_now else (all_above_sorted[0] if all_above_sorted else None)
+            best = near_now[0] if near_now else (eligible[0] if eligible else None)
 
             if best:
                 symbol = best["symbol"]
@@ -1303,7 +1311,8 @@ class FundingTraderApp(QMainWindow):
             else:
                 tab_data["auto_chosen_label"].setText(t["auto_chosen_not_found"])
                 tab_data["auto_chosen_label"].setStyleSheet("font-weight: bold; color: #b00;")
-                tab_data["auto_status_label"].setText(t["auto_status_none"])
+                status = t["auto_status_no_eligible"] if all_above_sorted else t["auto_status_none"]
+                tab_data["auto_status_label"].setText(status)
                 tab_data["auto_status_label"].setStyleSheet("color: #b00; font-style: italic;")
 
         except Exception as e:
@@ -1340,7 +1349,12 @@ class FundingTraderApp(QMainWindow):
                 symbol = item["symbol"]
                 btn = QPushButton(self.trans["auto_col_select"])
                 btn.setFixedHeight(22)
-                btn.clicked.connect(lambda _, s=symbol, r=item["rate"]: self._apply_symbol_with_calc(tab_data, s, r))
+                eligible = 0 <= item.get("secs", float("inf")) <= MAX_FUNDING_HORIZON_SECS
+                btn.setEnabled(eligible)
+                if not eligible:
+                    btn.setToolTip(self.trans["auto_outside_window"])
+                else:
+                    btn.clicked.connect(lambda _, s=symbol, r=item["rate"]: self._apply_symbol_with_calc(tab_data, s, r))
                 table.setCellWidget(row, 3, btn)
             else:
                 table.setCellWidget(row, 3, None)

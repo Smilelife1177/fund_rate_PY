@@ -63,7 +63,7 @@ def scan_funding_opportunities(
             continue
 
         secs_to_funding = (next_ft_ms - now_ms) / 1000.0
-        if not 0 <= secs_to_funding <= MAX_FUNDING_HORIZON_SECS:
+        if secs_to_funding < 0:
             continue
 
         entry = {"symbol": symbol, "rate": rate_pct, "secs": secs_to_funding}
