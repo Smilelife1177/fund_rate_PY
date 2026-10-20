@@ -19,7 +19,7 @@ DEFAULT_TAB_SETTINGS = {
     "testnet": False,
     "auto_limit": False,
     "stop_loss_percentage": 0.5,
-    "stop_loss_enabled": True,
+    "stop_loss_enabled": False,
     "auto_mode": False,
     "auto_min_funding": 0.05,
     "auto_profit_addon": 0.3,

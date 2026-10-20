@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import math
 import time
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from pybit.unified_trading import HTTP
 
 def initialize_client(exchange="Bybit", testnet=False):
@@ -85,29 +86,64 @@ def get_candle_open_price(session, symbol, exchange):
         print(f"Error fetching candle open price: {e}")
         return None
 
-def place_stop_loss_order(session, symbol, side, qty, stop_price, tick_size, exchange):
+def place_position_stop_loss(session, symbol, side, entry_price, stop_loss_pct, tick_size, exchange):
+    """Attach a full-position Bybit stop and reject prices already crossed by Mark Price."""
     try:
-        qty_step = get_qty_step(session, symbol, exchange)
-        qty = round_qty(qty, qty_step)
-        close_side = "Buy" if side == "Sell" else "Sell"
-        if tick_size:
-            decimal_places = abs(int(math.log10(tick_size)))
-            stop_price = round(stop_price, decimal_places)
-        print(f"Placing stop-loss {close_side} order for {symbol} at {stop_price} with quantity {qty}...")
-        response = session.place_order(
-            category="linear", symbol=symbol, side=close_side, orderType="Market",
-            qty=str(qty), stopPrice=str(stop_price),
-            triggerDirection=1 if side == "Buy" else 2,
-            timeInForce="GTC", reduceOnly=True,
+        if exchange != "Bybit":
+            return {"success": False, "message": "Stop-loss is only supported on Bybit"}
+        if (
+            side not in ("Buy", "Sell")
+            or entry_price <= 0
+            or stop_loss_pct <= 0
+            or not tick_size
+            or tick_size <= 0
+        ):
+            return {"success": False, "message": "Invalid side, entry price, percentage, or tick size"}
+
+        entry = Decimal(str(entry_price))
+        tick = Decimal(str(tick_size))
+        distance = Decimal(str(stop_loss_pct)) / Decimal("100")
+        if side == "Buy":
+            raw_stop = entry * (Decimal("1") - distance)
+            rounding = ROUND_DOWN
+        else:
+            raw_stop = entry * (Decimal("1") + distance)
+            rounding = ROUND_UP
+        stop_price = (raw_stop / tick).to_integral_value(rounding=rounding) * tick
+        if stop_price <= 0:
+            return {"success": False, "message": "Stop price must be greater than zero"}
+        stop_price_text = format(stop_price, "f")
+
+        ticker_response = session.get_tickers(category="linear", symbol=symbol)
+        tickers = ticker_response.get("result", {}).get("list", [])
+        if ticker_response.get("retCode") != 0 or not tickers or not tickers[0].get("markPrice"):
+            return {"success": False, "stop_price": stop_price_text, "message": "Could not read Bybit Mark Price"}
+        mark_price = Decimal(str(tickers[0]["markPrice"]))
+
+        if (side == "Buy" and stop_price >= mark_price) or (side == "Sell" and stop_price <= mark_price):
+            return {
+                "success": False,
+                "stop_price": stop_price_text,
+                "message": "Current Mark Price has already crossed the configured stop",
+            }
+
+        response = session.set_trading_stop(
+            category="linear",
+            symbol=symbol,
+            tpslMode="Full",
+            positionIdx=0,
+            stopLoss=stop_price_text,
+            slTriggerBy="MarkPrice",
         )
         if response["retCode"] == 0:
-            print(f"Stop-loss order placed: {response['result']}")
-            return response["result"]["orderId"]
-        print(f"Error placing stop-loss order: {response['retMsg']}")
-        return None
+            return {"success": True, "stop_price": stop_price_text, "message": "Stop-loss attached"}
+        return {
+            "success": False,
+            "stop_price": stop_price_text,
+            "message": response.get("retMsg", "Bybit rejected the stop-loss"),
+        }
     except Exception as e:
-        print(f"Error placing stop-loss order: {e}")
-        return None
+        return {"success": False, "message": str(e)}
 
 def get_optimal_limit_price(session, symbol, side, current_price, exchange, profit_percentage, tick_size, is_inverted=False):
     """Покращена версія з правильним боком ордербуку та врахуванням інверсії."""

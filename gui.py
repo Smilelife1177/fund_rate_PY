@@ -37,7 +37,7 @@ from logic import (
     get_next_funding_time, place_market_order, get_symbol_info,
     place_limit_close_order, initialize_client,
     close_all_positions, get_optimal_limit_price, get_candle_open_price,
-    place_stop_loss_order, get_order_execution_price,
+    place_position_stop_loss, get_order_execution_price,
     set_leverage,
     get_qty_step,
     get_closed_trades,
@@ -1517,6 +1517,8 @@ class FundingTraderApp(QMainWindow):
         order_id = tab_data["open_order_id"]
         qty = tab_data.get("order_qty", tab_data["qty"])
         profit_percentage = tab_data["profit_percentage"]
+        stop_loss_enabled = tab_data.get("stop_loss_enabled", False)
+        stop_loss_percentage = tab_data.get("stop_loss_percentage", 0.5)
         is_inverted = tab_data.get("reverse_side", False)
         auto_limit = tab_data.get("auto_limit", False)
 
@@ -1525,6 +1527,12 @@ class FundingTraderApp(QMainWindow):
             if not entry_price:
                 return {"entry_price": None}
             tick_size = get_symbol_info(session, symbol, exchange)
+            stop_loss_result = None
+            if stop_loss_enabled:
+                stop_loss_result = place_position_stop_loss(
+                    session, symbol, side, entry_price, stop_loss_percentage,
+                    tick_size, exchange,
+                )
             limit_price = entry_price * (1 + (1 if is_inverted else -1) * profit_percentage / 100)
             if auto_limit:
                 optimal = get_optimal_limit_price(
@@ -1546,6 +1554,7 @@ class FundingTraderApp(QMainWindow):
                 "trade_open_time": trade_open_time,
                 "limit_price": limit_price,
                 "close_order_id": close_order_id,
+                "stop_loss": stop_loss_result,
             }
 
         worker = ApiWorker(create_exit_order)
@@ -1568,6 +1577,12 @@ class FundingTraderApp(QMainWindow):
         tab_data["funding_time_price"] = entry_price
         tab_data["limit_price"] = result["limit_price"]
         print(f"Entry price for {symbol}: {entry_price} at {result['trade_open_time']}")
+        stop_loss = result.get("stop_loss")
+        if stop_loss:
+            if stop_loss["success"]:
+                print(f"Stop-loss attached for {symbol} at {stop_loss['stop_price']} Mark Price")
+            else:
+                print(f"Stop-loss was not set for {symbol}: {stop_loss['message']}")
         if not result["close_order_id"]:
             print(f"Could not place profit limit order for {symbol}")
             return

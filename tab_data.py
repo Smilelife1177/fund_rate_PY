@@ -18,7 +18,7 @@ DEFAULT_TAB_STATE = {
     "testnet": False,
     "auto_limit": False,
     "stop_loss_percentage": 0.5,
-    "stop_loss_enabled": True,
+    "stop_loss_enabled": False,
     "funding_data": None,
     "open_order_id": None,
     "funding_time_price": None,
