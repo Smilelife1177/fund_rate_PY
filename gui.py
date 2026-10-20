@@ -31,6 +31,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 from PyQt6.QtGui import QColor
+from PyQt6 import sip
 
 from logic import (
     get_account_balance, get_funding_data, get_current_price,
@@ -82,9 +83,20 @@ class ApiWorker(QRunnable):
 
     def run(self):
         try:
-            self.signals.completed.emit(self.task())
+            result = self.task()
         except Exception as exc:
-            self.signals.failed.emit(str(exc))
+            try:
+                if not sip.isdeleted(self.signals):
+                    self.signals.failed.emit(str(exc))
+            except (RuntimeError, AttributeError):
+                pass
+            return
+
+        try:
+            if not sip.isdeleted(self.signals):
+                self.signals.completed.emit(result)
+        except (RuntimeError, AttributeError):
+            pass
 
 # ---------------------------------------------------------------------------
 # Головне вікно
@@ -2394,6 +2406,7 @@ class FundingTraderApp(QMainWindow):
             for timer_key in ("timer", "funding_refresh_timer", "ping_timer"):
                 td[timer_key].stop()
         self._save()
+        QThreadPool.globalInstance().waitForDone(1000)
         event.accept()
 
     # ------------------------------------------------------------------ #
