@@ -1236,7 +1236,7 @@ class FundingTraderApp(QMainWindow):
             if best:
                 symbol = best["symbol"]
                 # Використовуємо _on_symbol_changed, він сам оновить UI, WebView, збереже та оновить дані
-                self._on_symbol_changed(tab_data, symbol)
+                self._on_symbol_changed(tab_data, symbol, save=False)
                 tab_data["auto_selected_symbol"] = symbol
                 tab_data["coin_input"].setText(symbol)
 
@@ -1245,9 +1245,16 @@ class FundingTraderApp(QMainWindow):
                 profit_addon = tab_data.get("auto_profit_addon", 0.3)
                 calculated_profit = round(funding_rate + profit_addon, 4)
                 tab_data["profit_percentage"] = calculated_profit
-                tab_data["profit_percentage_spinbox"].setValue(calculated_profit)
-                tab_data["profit_percentage_slider"].setValue(int(calculated_profit * 100))
-
+                profit_spinbox = tab_data["profit_percentage_spinbox"]
+                profit_slider = tab_data["profit_percentage_slider"]
+                spinbox_signals = profit_spinbox.blockSignals(True)
+                slider_signals = profit_slider.blockSignals(True)
+                try:
+                    profit_spinbox.setValue(calculated_profit)
+                    profit_slider.setValue(int(calculated_profit * 100))
+                finally:
+                    profit_spinbox.blockSignals(spinbox_signals)
+                    profit_slider.blockSignals(slider_signals)
                 # ── Qty + funding data в окремому потоці ──────────────────
                 def _background_calc():
                     try:
@@ -1266,17 +1273,22 @@ class FundingTraderApp(QMainWindow):
                         leverage_calc = tab_data.get("leverage", 10.0)
                         qty = self._round_qty((balance * balance_pct * leverage_calc) / price, qty_step)
                         tab_data["qty"] = qty
-                        tab_data["qty_spinbox"].setValue(qty)
-                    # _save вже був викликаний в _on_symbol_changed, тут можна не дублювати
-                    # Оновлюємо лейбли обсягу та профіту
+                        qty_spinbox = tab_data["qty_spinbox"]
+                        signals_were_blocked = qty_spinbox.blockSignals(True)
+                        try:
+                            qty_spinbox.setValue(qty)
+                        finally:
+                            qty_spinbox.blockSignals(signals_were_blocked)
+                    # Оновлюємо лейбли та зберігаємо підсумок сканування один раз.
                     self._update_volume_label(tab_data, price, balance)
                     self._update_predicted_profit(tab_data, price)
+                    self._save()
 
                 worker = ApiWorker(_background_calc)
                 tab_data["auto_calc_worker"] = worker
                 worker.signals.completed.connect(_apply_results)
                 worker.signals.failed.connect(
-                    lambda error: print(f"Background calc error: {error}")
+                    lambda error: (print(f"Background calc error: {error}"), self._save())
                 )
                 QThreadPool.globalInstance().start(worker)
 
@@ -2060,13 +2072,14 @@ class FundingTraderApp(QMainWindow):
         self._update_tab_funding_data(tab_data)
         # self._recalculate_auto_qty(tab_data)
 
-    def _on_symbol_changed(self, tab_data, symbol):
+    def _on_symbol_changed(self, tab_data, symbol, save=True):
         if tab_data not in self.tab_data_list:
             return
         tab_data["selected_symbol"] = symbol.strip().upper()
         self._refresh_web_view(tab_data)
         self.tab_widget.setTabText(self._tab_widget_index(tab_data), tab_data["selected_symbol"])
-        self._save()
+        if save:
+            self._save()
         self._update_tab_funding_data(tab_data)
         # self._recalculate_auto_qty(tab_data)
 
