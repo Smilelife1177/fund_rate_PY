@@ -35,7 +35,7 @@ from PyQt6 import sip
 
 from logic import (
     get_account_balance, get_funding_data, get_current_price,
-    get_next_funding_time, place_market_order, get_symbol_info,
+    get_next_funding_time, get_funding_cycle_timing, place_market_order, get_symbol_info,
     place_limit_close_order, initialize_client,
     close_all_positions, get_optimal_limit_price, get_candle_open_price,
     place_position_stop_loss, get_order_execution_price,
@@ -748,16 +748,23 @@ class FundingTraderApp(QMainWindow):
         tab_data["update_coin_button"] = btn
 
     def _add_entry_time_ui(self, layout, tab_data):
-        label = QLabel(self.trans["entry_time_label"])
+        label = QLabel(self._entry_time_label_text(tab_data))
         spin = QDoubleSpinBox()
         spin.setRange(0.5, 60.0)
         spin.setValue(tab_data["entry_time_seconds"])
         spin.setSingleStep(0.1)
         spin.valueChanged.connect(lambda v: self._on_entry_time_changed(tab_data, v))
+        after_funding_checkbox = QCheckBox(self.trans["entry_after_funding_checkbox"])
+        after_funding_checkbox.setChecked(tab_data.get("entry_after_funding", False))
+        after_funding_checkbox.stateChanged.connect(
+            lambda state: self._on_entry_after_funding_changed(tab_data, state)
+        )
         layout.addWidget(label)
         layout.addWidget(spin)
+        layout.addWidget(after_funding_checkbox)
         tab_data["entry_time_label"] = label
         tab_data["entry_time_spinbox"] = spin
+        tab_data["entry_after_funding_checkbox"] = after_funding_checkbox
 
     def _add_qty_ui(self, layout, tab_data):
         label = QLabel(self.trans["qty_label"])
@@ -1058,6 +1065,7 @@ class FundingTraderApp(QMainWindow):
                 "selected_symbol":        symbol,
                 "funding_interval_hours": template.get("funding_interval_hours", 8),
                 "entry_time_seconds":     template.get("entry_time_seconds", 5),
+                "entry_after_funding":    template.get("entry_after_funding", False),
                 "qty":                    template.get("qty", 1.0),
                 "profit_percentage":      template.get("profit_percentage", 1.0),
                 "auto_limit":             template.get("auto_limit", False),
@@ -1449,22 +1457,41 @@ class FundingTraderApp(QMainWindow):
             self._capture_pre_funding_price(tab_data, symbol)
 
         entry_window = tab_data["entry_time_seconds"]
+        try:
+            seconds_to_funding, seconds_since_funding = get_funding_cycle_timing(
+                time_val, tab_data["funding_interval_hours"],
+                is_testnet=tab_data.get("testnet", False)
+            )
+        except Exception as e:
+            print(f"Error calculating funding cycle timing: {e}")
+            return
+
+        enter_after_funding = tab_data.get("entry_after_funding", False)
+        should_enter = (
+            0 <= seconds_since_funding <= entry_window
+            if enter_after_funding
+            else 0 < seconds_to_funding <= entry_window
+        )
 
         if (
-            time_to_funding <= entry_window
-            and time_to_funding > 0
+            should_enter
             and not tab_data["open_order_id"]
             and not tab_data.get("order_submission_in_progress")
         ):
             if self.disable_trades_checkbox.isChecked():
                 print(f"[TRADING BLOCKED] Funding trade for {symbol} bypassed because Global Block is active.")
             else:
-                print(f"[ORDER TRIGGER] {symbol} time_to_funding={time_to_funding:.3f} entry_window={entry_window}")
+                timing_name = "seconds_since_funding" if enter_after_funding else "time_to_funding"
+                timing_value = seconds_since_funding if enter_after_funding else seconds_to_funding
+                print(f"[ORDER TRIGGER] {symbol} {timing_name}={timing_value:.3f} entry_window={entry_window}")
                 side = (
                     ("Sell" if rate > 0 else "Buy") if tab_data["reverse_side"]
                     else ("Buy" if rate > 0 else "Sell")
                 )
-                self._submit_market_order(tab_data, symbol, side, time_to_funding)
+                self._submit_market_order(
+                    tab_data, symbol, side,
+                    0 if enter_after_funding else time_to_funding,
+                )
 
         if time_to_funding <= 10:
             print(f"[COUNTDOWN] {symbol} time_to_funding={time_to_funding:.3f}s entry_window={tab_data['entry_time_seconds']}s order_id={tab_data['open_order_id']}")
@@ -2131,6 +2158,20 @@ class FundingTraderApp(QMainWindow):
         self._save()
         # self._recalculate_auto_qty(tab_data)
 
+    def _on_entry_after_funding_changed(self, tab_data, state):
+        if tab_data not in self.tab_data_list:
+            return
+        tab_data["entry_after_funding"] = state == Qt.CheckState.Checked.value
+        tab_data["entry_time_label"].setText(self._entry_time_label_text(tab_data))
+        self._save()
+
+    def _entry_time_label_text(self, tab_data):
+        return self.trans[
+            "entry_time_after_funding_label"
+            if tab_data.get("entry_after_funding", False)
+            else "entry_time_label"
+        ]
+
     def _on_qty_changed(self, tab_data, value):
         if tab_data not in self.tab_data_list:
             return
@@ -2322,7 +2363,6 @@ class FundingTraderApp(QMainWindow):
             "testnet_label":             t["testnet_label"],
             "reverse_side_label":        t["reverse_side_label"],
             "coin_input_label":          t["coin_input_label"],
-            "entry_time_label":          t["entry_time_label"],
             "qty_label":                 t["qty_label"],
             "profit_percentage_label":   t["profit_percentage_label"],
             "auto_limit_label":          t["auto_limit_label"],
@@ -2342,6 +2382,10 @@ class FundingTraderApp(QMainWindow):
         for key, text in mappings.items():
             if key in tab_data:
                 tab_data[key].setText(text)
+        if "entry_time_label" in tab_data:
+            tab_data["entry_time_label"].setText(self._entry_time_label_text(tab_data))
+        if "entry_after_funding_checkbox" in tab_data:
+            tab_data["entry_after_funding_checkbox"].setText(t["entry_after_funding_checkbox"])
 
         checkboxes = {
             "testnet_checkbox":           t["testnet_checkbox"],

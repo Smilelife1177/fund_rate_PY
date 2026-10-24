@@ -79,7 +79,7 @@ The application opens with the saved tab settings, or creates a Bybit tab with d
 
 ## Trading Controls
 
-Each trading tab has its own symbol, testnet setting, order quantity, leverage, entry window, profit target, and direction settings. The global trade-block control prevents automatic funding entries while enabled. The Close All Trades button asks for confirmation and closes open positions for that tab's selected symbol.
+Each trading tab has its own symbol, testnet setting, order quantity, leverage, entry window, profit target, and direction settings. By default, the entry window specifies seconds before funding. Enable **Enter after funding** below this field to change it to seconds after the most recent funding payout; the setting is saved independently for each tab. The global trade-block control prevents automatic funding entries while enabled. The Close All Trades button asks for confirmation and closes open positions for that tab's selected symbol.
 
 The automatic funding scanner only considers negative funding rates. It uses Bybit's public market ticker endpoint. Automatic trading uses the credentials and network mode configured for the selected trading tab.
 

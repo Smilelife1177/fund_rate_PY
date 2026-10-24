@@ -12,6 +12,7 @@ DEFAULT_TAB_SETTINGS = {
     "funding_interval_hours": 1.0,
     "reverse_side": False,
     "entry_time_seconds": 5.0,
+    "entry_after_funding": False,
     "qty": 45.0,
     "profit_percentage": 1.0,
     "leverage": 1.0,
@@ -52,6 +53,7 @@ def load_settings(settings_path: str = SETTINGS_PATH) -> list[dict]:
                     tab.setdefault("reverse_side", False)
                     tab.setdefault("auto_mode", False)
                     tab.setdefault("auto_min_funding", 0.05)
+                    tab.setdefault("entry_after_funding", False)
                 
                 return tabs
         return [DEFAULT_TAB_SETTINGS.copy()]
@@ -93,6 +95,7 @@ def save_settings(tab_data_list: list[dict], language: str, settings_path: str =
             "reverse_side": td.get("reverse_side", False),
             "funding_interval_hours": td["funding_interval_hours"],
             "entry_time_seconds": td["entry_time_seconds"],
+            "entry_after_funding": td.get("entry_after_funding", False),
             "qty": td["qty"],
             "profit_percentage": td["profit_percentage"],
             "leverage": td["leverage"],

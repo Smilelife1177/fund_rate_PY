@@ -11,6 +11,7 @@ DEFAULT_TAB_STATE = {
     "update_count": 0,
     "funding_interval_hours": 1.0,
     "entry_time_seconds": 5.0,
+    "entry_after_funding": False,
     "qty": 45.0,
     "profit_percentage": 1.0,
     "leverage": 1.0,

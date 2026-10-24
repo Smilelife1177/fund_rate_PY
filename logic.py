@@ -223,6 +223,39 @@ def get_next_funding_time(funding_time, funding_interval_hours, is_testnet=False
     hours, remainder = divmod(int(time_diff.total_seconds()), 3600)
     minutes, seconds = divmod(remainder, 60)
     return time_diff.total_seconds(), f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def get_funding_cycle_timing(funding_time, funding_interval_hours, is_testnet=False):
+    """Return seconds until the next funding and since the most recent funding.
+
+    The second value is used by the optional post-funding entry mode.  It is
+    calculated from the same cycle as the countdown, so stale API funding
+    timestamps remain usable until the next data refresh.
+    """
+    if is_testnet:
+        cycle_duration = 30.0
+        now_ts = time.time()
+        seconds_since_last = now_ts % cycle_duration
+        return cycle_duration - seconds_since_last, seconds_since_last
+
+    interval_seconds = float(funding_interval_hours) * 3600
+    if interval_seconds <= 0:
+        raise ValueError("funding_interval_hours must be positive")
+
+    funding_dt = datetime.fromtimestamp(funding_time, tz=timezone.utc)
+    current_time = datetime.now(timezone.utc)
+    if funding_dt > current_time:
+        next_funding = funding_dt
+    else:
+        elapsed_seconds = (current_time - funding_dt).total_seconds()
+        intervals_passed = int(elapsed_seconds // interval_seconds) + 1
+        next_funding = funding_dt + timedelta(seconds=intervals_passed * interval_seconds)
+
+    last_funding = next_funding - timedelta(seconds=interval_seconds)
+    return (
+        (next_funding - current_time).total_seconds(),
+        max(0.0, (current_time - last_funding).total_seconds()),
+    )
 #
 def place_market_order(session, symbol, side, qty, exchange):
     try:
