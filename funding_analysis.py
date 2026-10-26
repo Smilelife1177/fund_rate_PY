@@ -1,6 +1,4 @@
-import csv
 import math
-import os
 from collections import defaultdict
 from statistics import mean
 
@@ -19,6 +17,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from database import FUNDING_HEADERS, fetch_rows
 
 
 def _to_float(value, default=0.0):
@@ -128,9 +127,9 @@ class ScatterChartWidget(QWidget):
 
 
 class FundingAnalysisDialog(QDialog):
-    def __init__(self, csv_path, title="Funding Analysis", parent=None):
+    def __init__(self, db_path, title="Funding Analysis", parent=None):
         super().__init__(parent)
-        self.csv_path = csv_path
+        self.db_path = db_path
         self.rows = self._load_rows()
 
         self.setWindowTitle(title)
@@ -152,20 +151,19 @@ class FundingAnalysisDialog(QDialog):
         self._build_tabs()
 
     def _load_rows(self):
-        if not os.path.exists(self.csv_path):
-            return []
         try:
-            with open(self.csv_path, "r", encoding="utf-8") as f:
-                return list(csv.DictReader(f))
+            return [dict(zip(FUNDING_HEADERS, row)) for row in fetch_rows(
+                "funding_stats", FUNDING_HEADERS, self.db_path
+            )]
         except Exception as e:
-            print(f"Error reading analysis CSV: {e}")
+            print(f"Error reading funding analysis data: {e}")
             return []
 
     def _status_text(self):
         if not self.rows:
-            return f"No records found in {self.csv_path}"
+            return f"No records found in {self.db_path}"
         symbols = {row.get("symbol", "") for row in self.rows if row.get("symbol")}
-        return f"Records: {len(self.rows)} | Symbols: {len(symbols)} | Source: {self.csv_path}"
+        return f"Records: {len(self.rows)} | Symbols: {len(symbols)} | Source: {self.db_path}"
 
     def _refresh(self):
         self.rows = self._load_rows()

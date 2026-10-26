@@ -3,7 +3,7 @@ gui.py — головне вікно застосунку FundingTrader.
 
 Залежності:
     settings_manager  — завантаження / збереження JSON-налаштувань
-    stats_manager     — робота з CSV-статистикою угод
+    stats_manager     — робота зі статистикою угод у SQLite
     auto_scanner      — сканування монет за фандинг-ставкою
     tab_data          — ініціалізація стану вкладки
     logic             — API-виклики до бірж
@@ -13,7 +13,6 @@ gui.py — головне вікно застосунку FundingTrader.
 import os
 import math
 import time
-import csv
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -147,7 +146,7 @@ class FundingTraderApp(QMainWindow):
         self.add_new_tab(session=session, testnet=testnet, exchange=exchange, settings=initial)
 
         self._init_stats_tab()
-        stats.initialize_stats_csv()
+        stats.initialize_stats_database()
         self._update_stats_table()
 
         self._init_observation_tab()
@@ -287,14 +286,8 @@ class FundingTraderApp(QMainWindow):
         # Блокуємо сигнали, щоб уникнути помилок dataChanged із невалідними індексами при оновленні
         self.stats_table.blockSignals(True)
         
-        rows = stats.read_stats_csv()
-        if not rows:
-            self.stats_table.setRowCount(0)
-            self.stats_table.blockSignals(False)
-            return
-
-        headers, data_rows = rows[0], rows[1:]
-        data_rows = list(reversed(data_rows))
+        headers = stats.STATS_HEADERS
+        data_rows = stats.read_stats()
         
         self.stats_table.setColumnCount(len(headers))
         self.stats_table.setHorizontalHeaderLabels(headers)
@@ -485,7 +478,7 @@ class FundingTraderApp(QMainWindow):
 
     def _open_funding_analysis(self):
         dialog = FundingAnalysisDialog(
-            stats_funding.STATS_FILE,
+            stats_funding.STATS_DB_FILE,
             title=self.trans["observation_analysis_title"],
             parent=self,
         )
@@ -493,29 +486,14 @@ class FundingTraderApp(QMainWindow):
 
     def _update_observation_table(self):
         self.observation_table.blockSignals(True)
-        stats_file = stats_funding.STATS_FILE
-        if not os.path.exists(stats_file):
-            self.observation_table.setRowCount(0)
-            self.observation_table.blockSignals(False)
-            return
-
         try:
-            with open(stats_file, "r", encoding="utf-8") as f:
-                reader = csv.reader(f)
-                rows = list(reader)
+            headers = stats_funding.FIELDNAMES
+            data_rows = list(reversed(stats_funding.read_funding_stats()))
         except Exception as e:
-            print(f"Error reading funding stats CSV: {e}")
+            print(f"Error reading funding stats database: {e}")
             self.observation_table.setRowCount(0)
             self.observation_table.blockSignals(False)
             return
-
-        if not rows:
-            self.observation_table.setRowCount(0)
-            self.observation_table.blockSignals(False)
-            return
-
-        headers = rows[0]
-        data_rows = list(reversed(rows[1:]))
         
         self.observation_table.setColumnCount(len(headers))
         self.observation_table.setHorizontalHeaderLabels(headers)
@@ -592,9 +570,9 @@ class FundingTraderApp(QMainWindow):
             QMessageBox.warning(self, "Помилка введення", "Очікується 8 значень. Перевірте формат.")
             return
 
-        stats.initialize_stats_csv()
+        stats.initialize_stats_database()
         stats.write_stats_row(values)
-        QMessageBox.information(self, "Успіх", "Дані успішно записано в trade_stats.csv")
+        QMessageBox.information(self, "Успіх", "Дані успішно записано в funding_trader.db")
         self._update_stats_table()
 
 
@@ -1805,20 +1783,20 @@ class FundingTraderApp(QMainWindow):
         change_pct = ((current_price - entry_price) / entry_price) * 100
         print(f"Price change for {symbol} after 5m: {change_pct:+.2f}%")
         
-        # 2. Імпортуємо останні угоди (щоб наша угода точно була в CSV)
+        # 2. Імпортуємо останні угоди (щоб наша угода точно була в базі)
         trades = get_closed_trades(tab_data["session"], tab_data["exchange"], limit=5)
         if trades:
             written = stats.write_imported_trades(trades)
             print(f"Auto-import: written {written} trades.")
             
-        # 3. Оновлюємо конкретний рядок у CSV
+        # 3. Оновлюємо конкретний рядок у базі
         updated = stats.update_trade_after_5m(symbol, trade_open_time, change_pct)
         if updated:
             print(f"Successfully updated Change%_after5m for {symbol} at {trade_open_time}")
             self._update_stats_table()
         else:
             # Спробуємо також пошукати за поточним часом (якщо datetime.now() в write_stats_row був іншим)
-            print(f"Could not find trade for {symbol} at {trade_open_time} in CSV to update.")
+            print(f"Could not find trade for {symbol} at {trade_open_time} in the database to update.")
 
     def _log_limit_price_diff(self, tab_data, symbol):
         if tab_data not in self.tab_data_list:

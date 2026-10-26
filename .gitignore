@@ -2,6 +2,9 @@
 .env
 # Ignore database file (not working)
 bybit_users.db
+funding_trader.db
+funding_trader.db-shm
+funding_trader.db-wal
 # Ignore Python cache files
 __pycache__
 # Ignore settings file

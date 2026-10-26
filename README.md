@@ -13,8 +13,8 @@ Fund Rate PY is a PyQt6 desktop application for monitoring Bybit USDT perpetual 
 - Configure symbol, order quantity, leverage, entry window, profit target, and trade direction per tab.
 - Scan Bybit USDT perpetual contracts for negative funding rates above a configurable threshold. The scanner can show candidates manually or run in automatic mode; automatic scans can add tabs for upcoming opportunities.
 - Block funding trades globally with the control at the top of the window. This blocks automatic funding entries; it does not prevent manual position-closing actions.
-- Import closed Bybit trades into the Statistics tab and keep trade records in `trade_stats.csv`.
-- Optionally collect funding-event market data in the Observation tab and inspect it with the built-in analysis view. The collector writes `funding_stats.csv`.
+- Import closed Bybit trades into the Statistics tab and keep trade records in SQLite.
+- Optionally collect funding-event market data in the Observation tab and inspect it with the built-in analysis view. The collector writes to SQLite.
 - Use the interface in English or Ukrainian.
 
 ## Requirements
@@ -85,9 +85,9 @@ The automatic funding scanner only considers negative funding rates. It uses Byb
 
 ## Statistics
 
-The Statistics tab displays `trade_stats.csv`, supports manual entries, and can import recent closed Bybit trades. The Observation tab can start or stop a separate recorder process that writes `funding_stats.csv`; its analysis view summarizes collected records.
+The Statistics tab displays records from `funding_trader.db`, supports manual entries, and can import recent closed Bybit trades. The Observation tab can start or stop a separate recorder process that writes to the same SQLite database; its analysis view summarizes collected records. On first launch after this update, existing `trade_stats.csv` and `funding_stats.csv` files are imported once and are left untouched as backups.
 
-The funding statistics recorder currently initializes a Bybit mainnet client (`testnet=False`) regardless of the trading tab's Testnet checkbox. Configure appropriate mainnet API credentials before enabling collection. The generated CSV files and settings are local application data and are excluded from version control.
+The funding statistics recorder currently initializes a Bybit mainnet client (`testnet=False`) regardless of the trading tab's Testnet checkbox. Configure appropriate mainnet API credentials before enabling collection. The generated SQLite database and settings are local application data and are excluded from version control.
 
 ## Project Layout
 
@@ -96,7 +96,7 @@ The funding statistics recorder currently initializes a Bybit mainnet client (`t
 - `logic.py`: Bybit API calls and order helpers
 - `auto_scanner.py`: funding opportunity scanner
 - `stats_funding.py`: standalone funding-event data collector
-- `stats_manager.py`, `funding_analysis.py`: trade CSV and funding-data analysis
+- `database.py`, `stats_manager.py`, `funding_analysis.py`: SQLite storage and statistics analysis
 - `settings_manager.py`, `tab_data.py`: persisted settings and tab state
 - `translations.py`: English and Ukrainian interface strings
 

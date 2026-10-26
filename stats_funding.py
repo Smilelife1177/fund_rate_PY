@@ -1,14 +1,13 @@
-import os
 import time
-import csv
 import pytz
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from logic import initialize_client
+from database import DATABASE_FILE, FUNDING_HEADERS, fetch_rows, insert_rows
 
 # Constants
 KYIV_TZ = pytz.timezone("Europe/Kyiv")
-STATS_FILE = "funding_stats.csv"
+STATS_DB_FILE = DATABASE_FILE
 FIELDNAMES = [
     "funding_timestamp", 
     "symbol", 
@@ -30,6 +29,10 @@ FIELDNAMES = [
     "price_10m",
     "price_10m_%"
 ]
+
+
+def read_funding_stats():
+    return fetch_rows("funding_stats", FIELDNAMES)
 
 def get_advanced_stats(session, symbol, current_price, ticker_item):
     """Fetch all requested advanced metrics for a coin."""
@@ -123,52 +126,30 @@ class FundingBatch:
         self.captured_stages.add(stage)
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Captured {stage} prices for batch {self.funding_time_dt.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    def save_to_csv(self):
-        file_exists = os.path.isfile(STATS_FILE)
+    def save_to_database(self):
         try:
-            with open(STATS_FILE, "a", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-                if not file_exists:
-                    writer.writeheader()
-                
-                ts_str = self.funding_time_dt.strftime("%Y-%m-%d %H:%M:%S")
-                for symbol, d in self.records.items():
-                    price_pre = d['price']
-                    
-                    p1m = self.price_1m.get(symbol, 0)
-                    p5m = self.price_5m.get(symbol, 0)
-                    p10m = self.price_10m.get(symbol, 0)
-                    
-                    # Calculate % changes relative to price captured 5s before funding
-                    price_pre = self.price_pre5s.get(symbol, d['price'])
-                    ch1m = ((p1m - price_pre) / price_pre * 100) if price_pre > 0 and p1m > 0 else 0
-                    ch5m = ((p5m - price_pre) / price_pre * 100) if price_pre > 0 and p5m > 0 else 0
-                    ch10m = ((p10m - price_pre) / price_pre * 100) if price_pre > 0 and p10m > 0 else 0
-
-                    writer.writerow({
-                        "funding_timestamp": ts_str,
-                        "symbol": symbol,
-                        "funding_rate_pct": f"{d['rate']:.6f}",
-                        "volume_24h": f"{d['vol24h']:.2f}",
-                        "relative_volume_1h": f"{d['rvol']:.4f}",
-                        "open_interest_value": f"{d['oi_value']:.2f}",
-                        "spread_pct": f"{d['spread']:.4f}",
-                        "liquidity_depth_1pct_usdt": f"{d['liquidity']:.2f}",
-                        "volatility_1h_pct": f"{d['volatility']:.4f}",
-                        "price_change_1h_pct": f"{d['change1h']:.4f}",
-                        "price_change_12h_pct": f"{d['change12h']:.4f}",
-                        "price_change_24h_pct": f"{d['change24h']:.4f}",
-                        "price_pre_5s": f"{price_pre:.6f}",
-                        "price_1m": f"{p1m:.6f}",
-                        "price_1m_%": f"{ch1m:+.4f}",
-                        "price_5m": f"{p5m:.6f}",
-                        "price_5m_%": f"{ch5m:+.4f}",
-                        "price_10m": f"{p10m:.6f}",
-                        "price_10m_%": f"{ch10m:+.4f}"
-                    })
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Batch {ts_str} saved to {STATS_FILE}")
+            ts_str = self.funding_time_dt.strftime("%Y-%m-%d %H:%M:%S")
+            rows = []
+            for symbol, d in self.records.items():
+                p1m = self.price_1m.get(symbol, 0)
+                p5m = self.price_5m.get(symbol, 0)
+                p10m = self.price_10m.get(symbol, 0)
+                price_pre = self.price_pre5s.get(symbol, d['price'])
+                ch1m = ((p1m - price_pre) / price_pre * 100) if price_pre > 0 and p1m > 0 else 0
+                ch5m = ((p5m - price_pre) / price_pre * 100) if price_pre > 0 and p5m > 0 else 0
+                ch10m = ((p10m - price_pre) / price_pre * 100) if price_pre > 0 and p10m > 0 else 0
+                rows.append([
+                    ts_str, symbol, f"{d['rate']:.6f}", f"{d['vol24h']:.2f}",
+                    f"{d['rvol']:.4f}", f"{d['oi_value']:.2f}", f"{d['spread']:.4f}",
+                    f"{d['liquidity']:.2f}", f"{d['volatility']:.4f}", f"{d['change1h']:.4f}",
+                    f"{d['change12h']:.4f}", f"{d['change24h']:.4f}", f"{price_pre:.6f}",
+                    f"{p1m:.6f}", f"{ch1m:+.4f}", f"{p5m:.6f}", f"{ch5m:+.4f}",
+                    f"{p10m:.6f}", f"{ch10m:+.4f}",
+                ])
+            insert_rows("funding_stats", FIELDNAMES, rows)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Batch {ts_str} saved to {STATS_DB_FILE}")
         except Exception as e:
-            print(f"Error saving batch to CSV: {e}")
+            print(f"Error saving batch to SQLite: {e}")
 
 def main():
     load_dotenv()
@@ -357,7 +338,7 @@ def main():
                                 batch.update_prices(tickers, "5m")
                             if elapsed_sec >= 600 and "10m" not in batch.captured_stages:
                                 batch.update_prices(tickers, "10m")
-                                batch.save_to_csv()
+                                batch.save_to_database()
                                 completed_keys.append(ft_ms)
                         
                         for k in completed_keys:
