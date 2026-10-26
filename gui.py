@@ -1618,12 +1618,6 @@ class FundingTraderApp(QMainWindow):
             print(f"Could not place profit limit order for {symbol}")
             return
         print(f"Profit limit order placed at {result['limit_price']}")
-        QTimer.singleShot(
-            5 * 60 * 1000,
-            lambda: self._auto_import_and_update_after_5m(
-                tab_data, symbol, entry_price, result["trade_open_time"]
-            ),
-        )
         tab_data["open_order_id"] = None
         QTimer.singleShot(1000, lambda: self._log_limit_price_diff(tab_data, symbol))
 
@@ -1759,44 +1753,9 @@ class FundingTraderApp(QMainWindow):
         print(f"Profit limit order placed at {limit_price} "
               f"({((limit_price - entry_price)/entry_price*100 if side=='Sell' else (limit_price - entry_price)/entry_price*100):+.2f}%)")
         
-        # === NEW: Запускаємо таймер на 5 хвилин для Change%_after5m ===
-        # Використовуємо точний час з біржі ( trade_open_time ), отриманий на початку методу
-        QTimer.singleShot(5 * 60 * 1000, lambda: self._auto_import_and_update_after_5m(tab_data, symbol, entry_price, trade_open_time))
-        
         tab_data["open_order_id"] = None
 
         QTimer.singleShot(1000, lambda: self._log_limit_price_diff(tab_data, symbol))
-
-    def _auto_import_and_update_after_5m(self, tab_data, symbol, entry_price, trade_open_time):
-        """Автоматично імпортує угоду через 5хв та додає Change%_after5m."""
-        if tab_data not in self.tab_data_list:
-            return
-            
-        print(f"Executing 5-minute auto-update for {symbol}...")
-        
-        # 1. Отримуємо ціну через 5хв
-        current_price = get_current_price(tab_data["session"], symbol, tab_data["exchange"])
-        if not current_price or not entry_price:
-            print(f"Could not calculate 5m change for {symbol}: price is missing.")
-            return
-            
-        change_pct = ((current_price - entry_price) / entry_price) * 100
-        print(f"Price change for {symbol} after 5m: {change_pct:+.2f}%")
-        
-        # 2. Імпортуємо останні угоди (щоб наша угода точно була в базі)
-        trades = get_closed_trades(tab_data["session"], tab_data["exchange"], limit=5)
-        if trades:
-            written = stats.write_imported_trades(trades)
-            print(f"Auto-import: written {written} trades.")
-            
-        # 3. Оновлюємо конкретний рядок у базі
-        updated = stats.update_trade_after_5m(symbol, trade_open_time, change_pct)
-        if updated:
-            print(f"Successfully updated Change%_after5m for {symbol} at {trade_open_time}")
-            self._update_stats_table()
-        else:
-            # Спробуємо також пошукати за поточним часом (якщо datetime.now() в write_stats_row був іншим)
-            print(f"Could not find trade for {symbol} at {trade_open_time} in the database to update.")
 
     def _log_limit_price_diff(self, tab_data, symbol):
         if tab_data not in self.tab_data_list:

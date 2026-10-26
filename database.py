@@ -11,7 +11,7 @@ FUNDING_CSV_FILE = "funding_stats.csv"
 
 TRADE_HEADERS = [
     "trade_datetime", "percent", "funding", "funding_pct", "profit", "income",
-    "commission", "volume", "in_trade", "symbol", "change_after_5m",
+    "commission", "volume", "in_trade", "symbol",
 ]
 FUNDING_HEADERS = [
     "funding_timestamp", "symbol", "funding_rate_pct", "volume_24h",
@@ -49,13 +49,25 @@ def initialize_database(db_path=DATABASE_FILE):
                 id INTEGER PRIMARY KEY,
                 trade_datetime TEXT, percent TEXT, funding TEXT, funding_pct TEXT,
                 profit TEXT, income TEXT, commission TEXT, volume TEXT, in_trade TEXT,
-                symbol TEXT, change_after_5m TEXT
+                symbol TEXT
             )
         """)
+        _remove_legacy_trade_change_column(conn)
         funding_columns = ", ".join('"{}" TEXT'.format(header) for header in FUNDING_HEADERS)
         conn.execute("CREATE TABLE IF NOT EXISTS funding_stats (id INTEGER PRIMARY KEY, {})".format(funding_columns))
         _migrate_csv_once(conn, "trade_csv_migrated", TRADE_CSV_FILE, "trade_stats", TRADE_HEADERS)
         _migrate_csv_once(conn, "funding_csv_migrated", FUNDING_CSV_FILE, "funding_stats", FUNDING_HEADERS)
+
+
+def _remove_legacy_trade_change_column(conn):
+    """Drop the retired post-entry price-change field without losing trade data."""
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(trade_stats)")]
+    if "change_after_5m" not in columns:
+        return
+    columns_sql = ", ".join(TRADE_HEADERS)
+    conn.execute("CREATE TABLE trade_stats_rebuilt AS SELECT {} FROM trade_stats".format(columns_sql))
+    conn.execute("DROP TABLE trade_stats")
+    conn.execute("ALTER TABLE trade_stats_rebuilt RENAME TO trade_stats")
 
 
 def _migrate_csv_once(conn, migration_key, csv_path, table, headers):
@@ -86,7 +98,7 @@ def _migrate_csv_once(conn, migration_key, csv_path, table, headers):
 def fetch_rows(table, headers, db_path=DATABASE_FILE, newest_first=False):
     initialize_database(db_path)
     columns = ", ".join('"{}"'.format(header) for header in headers)
-    order = " ORDER BY id DESC" if newest_first else " ORDER BY id"
+    order = " ORDER BY rowid DESC" if newest_first else " ORDER BY rowid"
     with connection(db_path) as conn:
         return [list(row) for row in conn.execute("SELECT {} FROM {}{}".format(columns, table, order))]
 

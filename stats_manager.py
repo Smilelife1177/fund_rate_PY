@@ -8,7 +8,7 @@ from database import DATABASE_FILE, TRADE_HEADERS, connection, fetch_rows, initi
 STATS_DB_FILE = DATABASE_FILE
 STATS_HEADERS = [
     "Date/Time", "Profit %", "Funding", "Funding %", "Profit", "Income",
-    "Commission", "Volume", "In trade", "Symbol", "Change% after 5m",
+    "Commission", "Volume", "In trade", "Symbol",
 ]
 
 
@@ -57,23 +57,8 @@ def write_imported_trades(trades: list[dict]) -> int:
         rows.append([
             trade["datetime"], trade["profit_pct"], trade["funding"], funding_pct,
             trade["pnl"], trade["income"], trade["commission"], volume,
-            trade["in_trade"], trade["symbol"], trade.get("change_after_5m", ""),
+            trade["in_trade"], trade["symbol"],
         ])
         existing_keys.add(key)
     insert_rows("trade_stats", TRADE_HEADERS, rows)
     return len(rows)
-
-
-def update_trade_after_5m(symbol: str, trade_datetime: str, change_pct: float):
-    initialize_database()
-    with connection() as conn:
-        cursor = conn.execute(
-            """UPDATE trade_stats SET change_after_5m = ?
-               WHERE id = (
-                   SELECT id FROM trade_stats
-                   WHERE symbol = ? AND trade_datetime = ?
-                   ORDER BY id DESC LIMIT 1
-               )""",
-            ("{:+.2f}%".format(change_pct), symbol, trade_datetime),
-        )
-        return cursor.rowcount > 0
