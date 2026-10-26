@@ -95,10 +95,13 @@ def _migrate_csv_once(conn, migration_key, csv_path, table, headers):
     conn.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", (migration_key, "1"))
 
 
-def fetch_rows(table, headers, db_path=DATABASE_FILE, newest_first=False):
+def fetch_rows(table, headers, db_path=DATABASE_FILE, newest_first=False, order_by=None):
     initialize_database(db_path)
     columns = ", ".join('"{}"'.format(header) for header in headers)
-    order = " ORDER BY rowid DESC" if newest_first else " ORDER BY rowid"
+    if order_by:
+        order = " ORDER BY " + order_by
+    else:
+        order = " ORDER BY rowid DESC" if newest_first else " ORDER BY rowid"
     with connection(db_path) as conn:
         return [list(row) for row in conn.execute("SELECT {} FROM {}{}".format(columns, table, order))]
 

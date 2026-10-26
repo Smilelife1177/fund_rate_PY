@@ -36,7 +36,10 @@ def write_stats_row(values: list[str]):
 
 
 def read_stats() -> list[list[str]]:
-    return fetch_rows("trade_stats", TRADE_HEADERS)
+    return fetch_rows(
+        "trade_stats", TRADE_HEADERS,
+        order_by="trade_datetime DESC, rowid DESC",
+    )
 
 
 def write_imported_trades(trades: list[dict]) -> int:
