@@ -1457,7 +1457,9 @@ class FundingTraderApp(QMainWindow):
             and not tab_data.get("order_submission_in_progress")
         ):
             if self.disable_trades_checkbox.isChecked():
-                print(f"[TRADING BLOCKED] Funding trade for {symbol} bypassed because Global Block is active.")
+                if not tab_data.get("block_logged_this_cycle"):
+                    print(f"[TRADING BLOCKED] Funding trade for {symbol} bypassed because Global Block is active.")
+                    tab_data["block_logged_this_cycle"] = True
             else:
                 timing_name = "seconds_since_funding" if enter_after_funding else "time_to_funding"
                 timing_value = seconds_since_funding if enter_after_funding else seconds_to_funding
@@ -1470,6 +1472,8 @@ class FundingTraderApp(QMainWindow):
                     tab_data, symbol, side,
                     0 if enter_after_funding else time_to_funding,
                 )
+        elif not should_enter:
+            tab_data["block_logged_this_cycle"] = False
 
         if time_to_funding <= 10:
             print(f"[COUNTDOWN] {symbol} time_to_funding={time_to_funding:.3f}s entry_window={tab_data['entry_time_seconds']}s order_id={tab_data['open_order_id']}")
@@ -1833,6 +1837,7 @@ class FundingTraderApp(QMainWindow):
     def _update_tab_funding_data(self, tab_data, retry_count=3, retry_delay=2, refresh_web=True):
         """Refresh a tab without performing network I/O in the UI thread."""
         tab_data["order_placed_this_cycle"] = False
+        tab_data["block_logged_this_cycle"] = False
         if tab_data not in self.tab_data_list or tab_data.get("refresh_in_progress"):
             return
 
@@ -1896,6 +1901,8 @@ class FundingTraderApp(QMainWindow):
         self._update_leveraged_balance(tab_data, balance)
 
         if funding_data:
+            if "funding_interval_hours" in funding_data:
+                tab_data["funding_interval_hours"] = funding_data["funding_interval_hours"]
             rate = funding_data["funding_rate"]
             _, time_str = get_next_funding_time(funding_data["funding_time"], tab_data["funding_interval_hours"])
             tab_data["funding_info_label"].setText(

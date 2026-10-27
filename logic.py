@@ -45,11 +45,14 @@ def get_funding_data(session, symbol, exchange):
             funding_rate = float(ticker["fundingRate"]) * 100
             next_ft_ms = int(ticker.get("nextFundingTime") or 0)
             funding_time = next_ft_ms / 1000.0
-            print(f"Funding rate for {symbol}: {funding_rate:.4f}%, next at {funding_time}")
+            interval_str = ticker.get("fundingIntervalHour")
+            funding_interval_hours = float(interval_str) if interval_str else 8.0
+            print(f"Funding rate for {symbol}: {funding_rate:.4f}%, next at {funding_time}, interval: {funding_interval_hours}h")
             return {
                 "symbol": symbol,
                 "funding_rate": funding_rate,
-                "funding_time": funding_time
+                "funding_time": funding_time,
+                "funding_interval_hours": funding_interval_hours
             }
         print(f"Error fetching funding rate: {response['retMsg']}")
         return None
@@ -252,9 +255,12 @@ def get_funding_cycle_timing(funding_time, funding_interval_hours, is_testnet=Fa
         next_funding = funding_dt + timedelta(seconds=intervals_passed * interval_seconds)
 
     last_funding = next_funding - timedelta(seconds=interval_seconds)
+    elapsed_since_last = (current_time - last_funding).total_seconds()
+    # If last_funding is still in the future, funding hasn't occurred yet in this cycle.
+    seconds_since_funding = float("inf") if elapsed_since_last < 0 else elapsed_since_last
     return (
         (next_funding - current_time).total_seconds(),
-        max(0.0, (current_time - last_funding).total_seconds()),
+        seconds_since_funding,
     )
 #
 def place_market_order(session, symbol, side, qty, exchange):
