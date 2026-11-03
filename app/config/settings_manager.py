@@ -3,9 +3,11 @@ settings_manager.py — завантаження та збереження на�
 """
 import os
 import json
+from pathlib import Path
 
 
-SETTINGS_PATH = r"scripts\settings.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SETTINGS_PATH = str(PROJECT_ROOT / "scripts" / "settings.json")
 
 DEFAULT_TAB_SETTINGS = {
     "selected_symbol": "HYPERUSDT",

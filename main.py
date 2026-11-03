@@ -2,8 +2,8 @@ import sys
 import json
 import os
 from PyQt6.QtWidgets import QApplication
-from gui import FundingTraderApp
-from logic import initialize_client
+from app.core.logic import initialize_client
+from app.ui.gui import FundingTraderApp
 
 if __name__ == "__main__":
     print("Starting application...")

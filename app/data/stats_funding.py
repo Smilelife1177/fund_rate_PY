@@ -2,8 +2,8 @@ import time
 import pytz
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from logic import initialize_client
-from database import DATABASE_FILE, FUNDING_HEADERS, fetch_rows, insert_rows
+from app.core.logic import initialize_client
+from app.data.database import DATABASE_FILE, FUNDING_HEADERS, fetch_rows, insert_rows
 
 # Constants
 KYIV_TZ = pytz.timezone("Europe/Kyiv")

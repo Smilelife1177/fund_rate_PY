@@ -1,0 +1,1 @@
+"""Funding Trader application package."""

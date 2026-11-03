@@ -16,6 +16,7 @@ import time
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
@@ -32,7 +33,7 @@ from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 from PyQt6.QtGui import QColor
 from PyQt6 import sip
 
-from logic import (
+from app.core.logic import (
     get_account_balance, get_funding_data, get_current_price,
     get_next_funding_time, get_funding_cycle_timing, place_market_order, get_symbol_info,
     place_limit_close_order, initialize_client,
@@ -42,17 +43,20 @@ from logic import (
     get_qty_step,
     get_closed_trades,
 )
-from translations import translations
-import settings_manager as sm
-import stats_manager as stats
-from auto_scanner import (
+from app.ui.translations import translations
+from app.config import settings_manager as sm
+from app.data import stats_manager as stats
+from app.core.auto_scanner import (
     MAX_FUNDING_HORIZON_SECS,
     scan_funding_opportunities,
     format_funding_time,
 )
-from tab_data import build_tab_data
-import stats_funding
-from funding_analysis import FundingAnalysisDialog
+from app.models.tab_data import build_tab_data
+from app.data import stats_funding
+from app.ui.funding_analysis import FundingAnalysisDialog
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # ---------------------------------------------------------------------------
 # Допоміжні класи
@@ -182,9 +186,9 @@ class FundingTraderApp(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _set_window_icon(self):
-        path = r"images\log.ico"
+        path = PROJECT_ROOT / "images" / "log.ico"
         if os.path.exists(path):
-            self.setWindowIcon(QIcon(path))
+            self.setWindowIcon(QIcon(str(path)))
         else:
             print(f"Icon not found: {path}")
 
@@ -440,15 +444,10 @@ class FundingTraderApp(QMainWindow):
             print("Funding stats recorder is already running.")
             return
 
-        script_path = os.path.abspath("stats_funding.py")
-        if not os.path.exists(script_path):
-            print(f"Funding stats recorder not found: {script_path}")
-            return
-
         try:
             self._funding_stats_process = subprocess.Popen(
-                [sys.executable, "-u", script_path],
-                cwd=os.getcwd(),
+                [sys.executable, "-u", "-m", "app.data.stats_funding"],
+                cwd=str(PROJECT_ROOT),
             )
             print(f"Funding stats recorder started with PID {self._funding_stats_process.pid}")
         except Exception as e:

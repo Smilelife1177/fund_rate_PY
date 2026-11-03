@@ -92,13 +92,12 @@ The funding statistics recorder currently initializes a Bybit mainnet client (`t
 ## Project Layout
 
 - `main.py`: application entry point
-- `gui.py`: PyQt6 interface, tabs, and trading workflow
-- `logic.py`: Bybit API calls and order helpers
-- `auto_scanner.py`: funding opportunity scanner
-- `stats_funding.py`: standalone funding-event data collector
-- `database.py`, `stats_manager.py`, `funding_analysis.py`: SQLite storage and statistics analysis
-- `settings_manager.py`, `tab_data.py`: persisted settings and tab state
-- `translations.py`: English and Ukrainian interface strings
+- `main.py`: application entry point
+- `app/ui/`: PyQt6 interface, analysis dialog, and interface translations
+- `app/core/`: Bybit API calls, order helpers, and funding scanner
+- `app/data/`: SQLite storage and statistics services
+- `app/config/`: persisted settings service
+- `app/models/`: tab state initialization
 
 ## License
 

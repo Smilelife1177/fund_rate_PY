@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from database import FUNDING_HEADERS, fetch_rows
+from app.data.database import FUNDING_HEADERS, fetch_rows
 
 
 def _to_float(value, default=0.0):

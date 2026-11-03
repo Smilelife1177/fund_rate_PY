@@ -3,11 +3,13 @@ import csv
 import os
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
 
 
-DATABASE_FILE = "funding_trader.db"
-TRADE_CSV_FILE = "trade_stats.csv"
-FUNDING_CSV_FILE = "funding_stats.csv"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATABASE_FILE = str(PROJECT_ROOT / "funding_trader.db")
+TRADE_CSV_FILE = str(PROJECT_ROOT / "trade_stats.csv")
+FUNDING_CSV_FILE = str(PROJECT_ROOT / "funding_stats.csv")
 
 TRADE_HEADERS = [
     "trade_datetime", "percent", "funding", "funding_pct", "profit", "income",

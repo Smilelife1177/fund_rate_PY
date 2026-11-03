@@ -2,7 +2,7 @@
 import re
 from datetime import datetime
 
-from database import DATABASE_FILE, TRADE_HEADERS, connection, fetch_rows, initialize_database, insert_rows
+from app.data.database import DATABASE_FILE, TRADE_HEADERS, connection, fetch_rows, initialize_database, insert_rows
 
 
 STATS_DB_FILE = DATABASE_FILE

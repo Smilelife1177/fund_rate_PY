@@ -1,7 +1,7 @@
 """
 tab_data.py — ініціалізація стану вкладки (tab_data dict).
 """
-from logic import initialize_client
+from app.core.logic import initialize_client
 
 
 DEFAULT_TAB_STATE = {
