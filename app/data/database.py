@@ -20,8 +20,14 @@ FUNDING_HEADERS = [
     "relative_volume_1h", "open_interest_value", "spread_pct",
     "liquidity_depth_1pct_usdt", "volatility_1h_pct", "price_change_1h_pct",
     "price_change_12h_pct", "price_change_24h_pct", "price_pre_5s",
-    "price_at_funding", "price_1m",
-    "price_1m_%", "price_5m", "price_5m_%", "price_10m", "price_10m_%",
+    "price_at_funding",
+    "price_5s", "price_5s_%",
+    "price_15s", "price_15s_%",
+    "price_30s", "price_30s_%",
+    "mfe_1m_%", "mae_1m_%",
+    "price_1m", "price_1m_%",
+    "price_5m", "price_5m_%",
+    "price_10m", "price_10m_%",
 ]
 
 

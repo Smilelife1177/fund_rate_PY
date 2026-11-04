@@ -500,31 +500,49 @@ class FundingTraderApp(QMainWindow):
         
         for r, row in enumerate(data_rows):
             for c, val in enumerate(row):
-                item = QTableWidgetItem(val)
+                val_str = "" if val is None else str(val)
+                item = QTableWidgetItem(val_str)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 
-                if c == 2: # funding_rate_pct
-                     try:
-                         clean_val = val.replace('%', '').strip()
-                         num_val = float(clean_val)
-                         if num_val > 0:
-                             item.setForeground(QColor(0, 153, 0))
-                         elif num_val < 0:
-                             item.setForeground(QColor(153, 0, 0))
-                     except ValueError:
-                         pass
-                elif c in (15, 17, 19): # price changes 1m_%, 5m_%, 10m_%
-                     try:
-                         clean_val = val.replace('+', '').replace('%', '').strip()
-                         num_val = float(clean_val)
-                         if num_val > 0:
-                             item.setBackground(QColor(232, 245, 233))
-                             item.setForeground(QColor(46, 125, 50))
-                         elif num_val < 0:
-                             item.setBackground(QColor(255, 235, 235))
-                             item.setForeground(QColor(198, 40, 40))
-                     except ValueError:
-                         pass
+                if val_str:
+                    if c == 2: # funding_rate_pct
+                        try:
+                            clean_val = val_str.replace('%', '').strip()
+                            num_val = float(clean_val)
+                            if num_val > 0:
+                                item.setForeground(QColor(0, 153, 0))
+                            elif num_val < 0:
+                                item.setForeground(QColor(153, 0, 0))
+                        except ValueError:
+                            pass
+                    elif c in (15, 17, 19, 23, 25, 27): # price_5s_%, price_15s_%, price_30s_%, price_1m_%, price_5m_%, price_10m_%
+                        try:
+                            clean_val = val_str.replace('+', '').replace('%', '').strip()
+                            num_val = float(clean_val)
+                            if num_val > 0:
+                                item.setBackground(QColor(232, 245, 233))
+                                item.setForeground(QColor(46, 125, 50))
+                            elif num_val < 0:
+                                item.setBackground(QColor(255, 235, 235))
+                                item.setForeground(QColor(198, 40, 40))
+                        except ValueError:
+                            pass
+                    elif c == 20: # mfe_1m_% -- always green shades
+                        try:
+                            num_val = float(val_str.replace('+', '').strip())
+                            if num_val > 0:
+                                item.setBackground(QColor(200, 230, 201))
+                                item.setForeground(QColor(27, 94, 32))
+                        except ValueError:
+                            pass
+                    elif c == 21: # mae_1m_% -- always red shades
+                        try:
+                            num_val = float(val_str.replace('+', '').strip())
+                            if num_val < 0:
+                                item.setBackground(QColor(255, 205, 210))
+                                item.setForeground(QColor(183, 28, 28))
+                        except ValueError:
+                            pass
 
                 self.observation_table.setItem(r, c, item)
         
