@@ -513,7 +513,7 @@ class FundingTraderApp(QMainWindow):
                              item.setForeground(QColor(153, 0, 0))
                      except ValueError:
                          pass
-                elif c in (14, 16, 18): # price changes 1m_%, 5m_%, 10m_%
+                elif c in (15, 17, 19): # price changes 1m_%, 5m_%, 10m_%
                      try:
                          clean_val = val.replace('+', '').replace('%', '').strip()
                          num_val = float(clean_val)

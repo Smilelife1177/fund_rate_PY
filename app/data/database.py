@@ -19,7 +19,8 @@ FUNDING_HEADERS = [
     "funding_timestamp", "symbol", "funding_rate_pct", "volume_24h",
     "relative_volume_1h", "open_interest_value", "spread_pct",
     "liquidity_depth_1pct_usdt", "volatility_1h_pct", "price_change_1h_pct",
-    "price_change_12h_pct", "price_change_24h_pct", "price_pre_5s", "price_1m",
+    "price_change_12h_pct", "price_change_24h_pct", "price_pre_5s",
+    "price_at_funding", "price_1m",
     "price_1m_%", "price_5m", "price_5m_%", "price_10m", "price_10m_%",
 ]
 
@@ -55,10 +56,20 @@ def initialize_database(db_path=DATABASE_FILE):
             )
         """)
         _remove_legacy_trade_change_column(conn)
-        funding_columns = ", ".join('"{}" TEXT'.format(header) for header in FUNDING_HEADERS)
+        funding_columns = ", ".join('"' + h + '" TEXT' for h in FUNDING_HEADERS)
         conn.execute("CREATE TABLE IF NOT EXISTS funding_stats (id INTEGER PRIMARY KEY, {})".format(funding_columns))
+        _add_missing_funding_columns(conn)
         _migrate_csv_once(conn, "trade_csv_migrated", TRADE_CSV_FILE, "trade_stats", TRADE_HEADERS)
         _migrate_csv_once(conn, "funding_csv_migrated", FUNDING_CSV_FILE, "funding_stats", FUNDING_HEADERS)
+
+
+def _add_missing_funding_columns(conn):
+    """Add any new columns from FUNDING_HEADERS that are missing in an existing table."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(funding_stats)")}
+    for header in FUNDING_HEADERS:
+        if header not in existing:
+            conn.execute('ALTER TABLE funding_stats ADD COLUMN "{}" TEXT'.format(header))
+            print("Schema migration: added column '{}' to funding_stats.".format(header))
 
 
 def _remove_legacy_trade_change_column(conn):
@@ -85,7 +96,7 @@ def _migrate_csv_once(conn, migration_key, csv_path, table, headers):
                     for row in reader
                 ]
             if rows:
-                columns = ", ".join('"{}"'.format(header) for header in headers)
+                columns = ", ".join('"' + h + '"' for h in headers)
                 placeholders = ", ".join("?" for _ in headers)
                 conn.executemany(
                     "INSERT INTO {} ({}) VALUES ({})".format(table, columns, placeholders), rows
@@ -99,7 +110,7 @@ def _migrate_csv_once(conn, migration_key, csv_path, table, headers):
 
 def fetch_rows(table, headers, db_path=DATABASE_FILE, newest_first=False, order_by=None):
     initialize_database(db_path)
-    columns = ", ".join('"{}"'.format(header) for header in headers)
+    columns = ", ".join('"' + h + '"' for h in headers)
     if order_by:
         order = " ORDER BY " + order_by
     else:
@@ -112,7 +123,7 @@ def insert_rows(table, headers, rows, db_path=DATABASE_FILE):
     if not rows:
         return
     initialize_database(db_path)
-    columns = ", ".join('"{}"'.format(header) for header in headers)
+    columns = ", ".join('"' + h + '"' for h in headers)
     placeholders = ", ".join("?" for _ in headers)
     with connection(db_path) as conn:
         conn.executemany(

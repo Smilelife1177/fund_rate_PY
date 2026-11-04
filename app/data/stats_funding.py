@@ -21,7 +21,8 @@ FIELDNAMES = [
     "price_change_1h_pct",
     "price_change_12h_pct",
     "price_change_24h_pct",
-    "price_pre_5s", 
+    "price_pre_5s",
+    "price_at_funding",
     "price_1m", 
     "price_1m_%",
     "price_5m", 
@@ -102,6 +103,7 @@ class FundingBatch:
         self.price_5m = {}
         self.price_10m = {}
         self.price_pre5s = {}
+        self.price_at_funding = {}   # exact price at the funding moment (<=1s before tick)
         self.captured_stages = set()
         self.is_completed = False
 
@@ -115,7 +117,18 @@ class FundingBatch:
         }
 
     def update_prices(self, tickers, stage):
-        target_dict = getattr(self, f"price_{stage}")
+        target_dict = getattr(self, f"price_{stage}".replace("at_funding", "at_funding"))
+        # Map stage name to instance attribute
+        stage_map = {
+            "pre5s": self.price_pre5s,
+            "at_funding": self.price_at_funding,
+            "1m": self.price_1m,
+            "5m": self.price_5m,
+            "10m": self.price_10m,
+        }
+        target_dict = stage_map.get(stage)
+        if target_dict is None:
+            return
         for item in tickers:
             symbol = item["symbol"]
             if symbol in self.records:
@@ -135,14 +148,17 @@ class FundingBatch:
                 p5m = self.price_5m.get(symbol, 0)
                 p10m = self.price_10m.get(symbol, 0)
                 price_pre = self.price_pre5s.get(symbol, d['price'])
-                ch1m = ((p1m - price_pre) / price_pre * 100) if price_pre > 0 and p1m > 0 else 0
-                ch5m = ((p5m - price_pre) / price_pre * 100) if price_pre > 0 and p5m > 0 else 0
-                ch10m = ((p10m - price_pre) / price_pre * 100) if price_pre > 0 and p10m > 0 else 0
+                # Use price_at_funding as the reference for % calculations; fall back to price_pre
+                price_ref = self.price_at_funding.get(symbol) or price_pre
+                ch1m = ((p1m - price_ref) / price_ref * 100) if price_ref > 0 and p1m > 0 else 0
+                ch5m = ((p5m - price_ref) / price_ref * 100) if price_ref > 0 and p5m > 0 else 0
+                ch10m = ((p10m - price_ref) / price_ref * 100) if price_ref > 0 and p10m > 0 else 0
                 rows.append([
                     ts_str, symbol, f"{d['rate']:.6f}", f"{d['vol24h']:.2f}",
                     f"{d['rvol']:.4f}", f"{d['oi_value']:.2f}", f"{d['spread']:.4f}",
                     f"{d['liquidity']:.2f}", f"{d['volatility']:.4f}", f"{d['change1h']:.4f}",
                     f"{d['change12h']:.4f}", f"{d['change24h']:.4f}", f"{price_pre:.6f}",
+                    f"{price_ref:.6f}",
                     f"{p1m:.6f}", f"{ch1m:+.4f}", f"{p5m:.6f}", f"{ch5m:+.4f}",
                     f"{p10m:.6f}", f"{ch10m:+.4f}",
                 ])
@@ -306,7 +322,7 @@ def main():
                     print(f"API Error fetching tickers: {response.get('retMsg')}")
                     last_trigger_hour = -1 # Retry
 
-            # 2. Update Prices for Active Batches (1m, 5m, 10m post-funding)
+            # 2. Update Prices for Active Batches (pre5s, at_funding, 1m, 5m, 10m)
             if active_batches:
                 # To minimize API calls, we only fetch tickers if we actually need a snapshot
                 now_ms = int(time.time() * 1000)
@@ -317,7 +333,8 @@ def main():
                     if (elapsed >= 60 and "1m" not in batch.captured_stages) or \
                        (elapsed >= 300 and "5m" not in batch.captured_stages) or \
                        (elapsed >= 600 and "10m" not in batch.captured_stages) or \
-                       (0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages):
+                       (0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages) or \
+                       (0 <= time_to_funding <= 1 and "at_funding" not in batch.captured_stages):
                         needs_update = True
                         break
                 
@@ -332,6 +349,9 @@ def main():
                             time_to_funding = (ft_ms - now_ms) / 1000.0
                             if 0 <= time_to_funding <= 5 and "pre5s" not in batch.captured_stages:
                                 batch.update_prices(tickers, "pre5s")
+                            # Capture exact funding price: within the last 1 second before tick
+                            if 0 <= time_to_funding <= 1 and "at_funding" not in batch.captured_stages:
+                                batch.update_prices(tickers, "at_funding")
                             if elapsed_sec >= 60 and "1m" not in batch.captured_stages:
                                 batch.update_prices(tickers, "1m")
                             if elapsed_sec >= 300 and "5m" not in batch.captured_stages:
