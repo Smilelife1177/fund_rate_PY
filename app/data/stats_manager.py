@@ -51,17 +51,31 @@ def write_imported_trades(trades: list[dict]) -> int:
         }
 
     rows = []
+    updates = []
     for trade in reversed(trades):
         key = (trade["datetime"], trade["symbol"])
+        funding_rate = trade.get("funding_rate_pct")
+        funding_pct = (
+            "{:.4f}%".format(float(funding_rate))
+            if funding_rate is not None else "N/A"
+        )
         if key in existing_keys:
+            if funding_rate is not None:
+                updates.append((funding_pct, trade["datetime"], trade["symbol"]))
             continue
         volume = trade["volume"]
-        funding_pct = "{:.4f}%".format(trade["funding"] / volume * 100) if volume else "0.0000%"
         rows.append([
             trade["datetime"], trade["profit_pct"], trade["funding"], funding_pct,
             trade["pnl"], trade["income"], trade["commission"], volume,
             trade["in_trade"], trade["symbol"],
         ])
         existing_keys.add(key)
+    if updates:
+        with connection() as conn:
+            conn.executemany(
+                "UPDATE trade_stats SET funding_pct = ? "
+                "WHERE trade_datetime = ? AND symbol = ?",
+                updates,
+            )
     insert_rows("trade_stats", TRADE_HEADERS, rows)
     return len(rows)

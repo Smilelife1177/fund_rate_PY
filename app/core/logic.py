@@ -481,6 +481,7 @@ def get_closed_trades(session, exchange, limit=50):
             log_entries = log_resp["result"]["list"] if log_resp.get("retCode") == 0 else []
 
             trades = []
+            funding_rate_history = {}
             for pos in pnl_resp["result"]["list"]:
                 symbol       = pos["symbol"]
                 qty          = float(pos.get("qty", 0))
@@ -490,6 +491,39 @@ def get_closed_trades(session, exchange, limit=50):
                 created_ms   = int(pos.get("createdTime", 0))
                 updated_ms   = int(pos.get("updatedTime", 0))
                 side         = pos.get("side", "Buy")
+
+                if symbol not in funding_rate_history:
+                    try:
+                        rate_resp = session.get_funding_rate_history(
+                            category="linear", symbol=symbol, limit=200
+                        )
+                        if rate_resp.get("retCode") == 0:
+                            funding_rate_history[symbol] = rate_resp.get(
+                                "result", {}
+                            ).get("list", [])
+                        else:
+                            print(
+                                f"Error fetching funding rate history for {symbol}: "
+                                f"{rate_resp.get('retMsg', 'Unknown API error')}"
+                            )
+                            funding_rate_history[symbol] = []
+                    except Exception as e:
+                        print(f"Error fetching funding rate history for {symbol}: {e}")
+                        funding_rate_history[symbol] = []
+
+                applicable_rates = []
+                for rate_entry in funding_rate_history[symbol]:
+                    try:
+                        rate_time = int(rate_entry["fundingRateTimestamp"])
+                        rate_value = float(rate_entry["fundingRate"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if rate_time <= created_ms:
+                        applicable_rates.append((rate_time, rate_value))
+                funding_rate_pct = (
+                    max(applicable_rates, key=lambda item: item[0])[1] * 100
+                    if applicable_rates else None
+                )
 
                 open_fee     = float(pos.get("openFee", 0))
                 close_fee    = float(pos.get("closeFee", 0))
@@ -572,6 +606,7 @@ def get_closed_trades(session, exchange, limit=50):
                     "datetime":        trade_time,
                     "profit_pct":      f"{profit_pct:.2f}%",
                     "funding":         round(funding, 4),
+                    "funding_rate_pct": funding_rate_pct,
                     "pnl":             round(closed_pnl, 4),
                     "income":          income,
                     "commission":      round(commission, 4),
