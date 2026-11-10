@@ -1975,10 +1975,12 @@ class FundingTraderApp(QMainWindow):
                 # Прибуток від цінового руху (ліміт-ордер)
                 price_profit = pos_value * (profit_pct / 100.0)
                 
-                # Фандинг (залежить від reverse_side)
-                # Якщо reverse_side=True, ми отримуємо фандинг. Якщо False - платимо.
-                is_earning = tab_data.get("reverse_side", False)
-                funding_pnl = (1 if is_earning else -1) * abs(funding_rate / 100.0) * pos_value
+                # Entering after funding means this trade won't receive or pay
+                # the funding event currently shown in the predicted amount.
+                funding_pnl = 0.0
+                if not tab_data.get("entry_after_funding", False):
+                    is_earning = tab_data.get("reverse_side", False)
+                    funding_pnl = (1 if is_earning else -1) * abs(funding_rate / 100.0) * pos_value
                 
                 # Комісія (орієнтовно 0.06% маркет + 0.02% ліміт = 0.08% від позиції)
                 commissions = pos_value * 0.0008
@@ -2124,6 +2126,7 @@ class FundingTraderApp(QMainWindow):
             return
         tab_data["entry_after_funding"] = state == Qt.CheckState.Checked.value
         tab_data["entry_time_label"].setText(self._entry_time_label_text(tab_data))
+        self._update_predicted_profit(tab_data)
         self._save()
 
     def _entry_time_label_text(self, tab_data):
