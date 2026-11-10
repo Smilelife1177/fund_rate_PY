@@ -22,6 +22,8 @@ DEFAULT_TAB_STATE = {
     "stop_loss_enabled": False,
     "funding_data": None,
     "open_order_id": None,
+    "order_side": None,
+    "entry_price_retry_count": 0,
     "funding_time_price": None,
     "limit_price": None,
     "pre_funding_price": None,

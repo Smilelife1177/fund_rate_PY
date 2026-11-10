@@ -149,7 +149,7 @@ def place_position_stop_loss(session, symbol, side, entry_price, stop_loss_pct, 
         return {"success": False, "message": str(e)}
 
 def get_optimal_limit_price(session, symbol, side, current_price, exchange, profit_percentage, tick_size, is_inverted=False):
-    """Покращена версія з правильним боком ордербуку та врахуванням інверсії."""
+    """Find a liquid take-profit price near the requested profit target."""
     try:
         print(f"Fetching order book for {symbol} to determine optimal limit price (inverted: {is_inverted})...")
 
@@ -159,8 +159,7 @@ def get_optimal_limit_price(session, symbol, side, current_price, exchange, prof
         bids = [(float(p), float(q)) for p, q in response["result"]["b"]]
         asks = [(float(p), float(q)) for p, q in response["result"]["a"]]
 
-        # Напрямок залежить від інверсії: OFF -> вниз (-), ON -> вгору (+)
-        direction = 1 if is_inverted else -1
+        direction = 1 if side == "Buy" else -1
         target = current_price * (1 + (direction * profit_percentage) / 100)
 
         # Правильний бік ордербуку для пошуку ліквідності
@@ -298,19 +297,65 @@ def get_symbol_info(session, symbol, exchange):
         return None
 
 def get_order_execution_price(session, symbol, order_id, exchange):
-    try:
-        response = session.get_order_history(category="linear", symbol=symbol, orderId=order_id)
-        if response["retCode"] != 0 or not response["result"]["list"]:
-            print(f"Error fetching order execution price for {symbol}: {response['retMsg']}")
-            return None, None
-        order = response["result"]["list"][0]
-        execution_price = float(order.get("avgPrice", 0.0))
-        exec_time_ms = int(order.get("updatedTime") or order.get("createdTime") or 0)
-        execution_time_str = datetime.fromtimestamp(exec_time_ms / 1000).strftime("%Y-%m-%d %H:%M")
-        return (execution_price, execution_time_str) if execution_price > 0 else (None, None)
-    except Exception as e:
-        print(f"Error fetching order execution price for {symbol}: {e}")
-        return None, None
+    last_error = None
+    for attempt in range(6):
+        try:
+            response = session.get_executions(
+                category="linear", symbol=symbol, orderId=order_id
+            )
+            if response.get("retCode") == 0:
+                executions = [
+                    execution for execution in response.get("result", {}).get("list", [])
+                    if execution.get("orderId") == order_id
+                ]
+                total_qty = sum(float(execution.get("execQty") or 0) for execution in executions)
+                total_value = sum(
+                    float(execution.get("execPrice") or 0)
+                    * float(execution.get("execQty") or 0)
+                    for execution in executions
+                )
+                if total_qty > 0 and total_value > 0:
+                    execution_price = total_value / total_qty
+                    exec_time_ms = max(int(execution.get("execTime") or 0) for execution in executions)
+                    execution_time_str = datetime.fromtimestamp(
+                        exec_time_ms / 1000
+                    ).strftime("%Y-%m-%d %H:%M")
+                    return execution_price, execution_time_str
+            else:
+                last_error = response.get("retMsg", "Unknown executions API error")
+        except Exception as e:
+            last_error = str(e)
+
+        try:
+            response = session.get_order_history(
+                category="linear", symbol=symbol, orderId=order_id
+            )
+            if response.get("retCode") == 0:
+                orders = response.get("result", {}).get("list", [])
+                if orders:
+                    order = orders[0]
+                    execution_price = float(order.get("avgPrice") or 0)
+                    if execution_price > 0:
+                        exec_time_ms = int(
+                            order.get("updatedTime") or order.get("createdTime") or 0
+                        )
+                        execution_time_str = datetime.fromtimestamp(
+                            exec_time_ms / 1000
+                        ).strftime("%Y-%m-%d %H:%M")
+                        return execution_price, execution_time_str
+            else:
+                last_error = response.get("retMsg", "Unknown order history API error")
+        except Exception as e:
+            last_error = str(e)
+
+        if attempt < 5:
+            time.sleep(0.5)
+
+    if last_error:
+        print(f"Error fetching order execution price for {symbol}: {last_error}")
+    else:
+        print(f"No execution data available yet for {symbol}, order id: {order_id}")
+    return None, None
 
 def place_limit_close_order(session, symbol, side, qty, price, tick_size, exchange):
     try:

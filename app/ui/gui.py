@@ -1548,6 +1548,8 @@ class FundingTraderApp(QMainWindow):
         tab_data["pre_funding_price"] = None
         if not order_id:
             return
+        tab_data["order_side"] = side
+        tab_data["entry_price_retry_count"] = 0
         tab_data["order_qty"] = qty
         tab_data["order_placed_this_cycle"] = True
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
@@ -1585,7 +1587,8 @@ class FundingTraderApp(QMainWindow):
                     session, symbol, side, entry_price, stop_loss_percentage,
                     tick_size, exchange,
                 )
-            limit_price = entry_price * (1 + (1 if is_inverted else -1) * profit_percentage / 100)
+            direction = 1 if side == "Buy" else -1
+            limit_price = entry_price * (1 + direction * profit_percentage / 100)
             if auto_limit:
                 optimal = get_optimal_limit_price(
                     session, symbol, side, entry_price, exchange, profit_percentage,
@@ -1595,7 +1598,7 @@ class FundingTraderApp(QMainWindow):
                     limit_price = optimal
             decimal_places = abs(int(math.log10(tick_size))) if tick_size else 4
             if tick_size:
-                rounder = math.floor if side == "Buy" else math.ceil
+                rounder = math.ceil if side == "Buy" else math.floor
                 limit_price = rounder(limit_price / tick_size) * tick_size
             limit_price = round(limit_price, decimal_places)
             close_order_id = place_limit_close_order(
@@ -1622,9 +1625,28 @@ class FundingTraderApp(QMainWindow):
             return
         entry_price = result["entry_price"]
         if not entry_price:
-            print(f"Could not get entry price for {symbol}, order id: {tab_data['open_order_id']}")
-            tab_data["open_order_id"] = None
+            retry_count = tab_data.get("entry_price_retry_count", 0) + 1
+            tab_data["entry_price_retry_count"] = retry_count
+            order_id = tab_data["open_order_id"]
+            if retry_count <= 5:
+                print(
+                    f"Entry price not available for {symbol}, order id: {order_id}; "
+                    f"retrying ({retry_count}/5)"
+                )
+                QTimer.singleShot(
+                    2000,
+                    lambda: self._capture_funding_price_async(
+                        tab_data, symbol, tab_data["order_side"]
+                    ),
+                )
+            else:
+                print(
+                    f"[ACTION REQUIRED] Could not get entry price for {symbol}, "
+                    f"order id: {order_id}. The order id was retained; verify the "
+                    "position and place a take-profit order manually if needed."
+                )
             return
+        tab_data["entry_price_retry_count"] = 0
         tab_data["position_open"] = True
         tab_data["funding_time_price"] = entry_price
         tab_data["limit_price"] = result["limit_price"]
@@ -1696,8 +1718,10 @@ class FundingTraderApp(QMainWindow):
         )
 
         if not entry_price:
-            print(f"Could not get entry price for {symbol}, order id: {tab_data['open_order_id']}")
-            tab_data["open_order_id"] = None
+            print(
+                f"Could not get entry price for {symbol}, order id: "
+                f"{tab_data['open_order_id']}. The order id was retained for recovery."
+            )
             return
 
         tab_data["position_open"] = True
@@ -1726,8 +1750,7 @@ class FundingTraderApp(QMainWindow):
         # print(f"Stop limit order at {stop_price} (+{stop_addon_pct}% from entry)")
 #
         # ── Profit ліміт-ордер ────────────────────────────────────────
-        is_inverted = tab_data.get("reverse_side", False)
-        direction = 1 if is_inverted else -1
+        direction = 1 if side == "Buy" else -1
         target = entry_price * (1 + (direction * tab_data["profit_percentage"]) / 100)
 
         # Вибір ціни залежно від режиму
@@ -1753,10 +1776,10 @@ class FundingTraderApp(QMainWindow):
         if tick_size:
             decimal_places = abs(int(math.log10(tick_size)))
             
-            if side == "Buy":      # Sell limit (лонг) → хочемо вищу ціну → округлюємо вниз
-                limit_price = math.floor(limit_price / tick_size) * tick_size
-            else:                  # Buy limit (шорт) → хочемо нижчу ціну → округлюємо вгору
+            if side == "Buy":
                 limit_price = math.ceil(limit_price / tick_size) * tick_size
+            else:
+                limit_price = math.floor(limit_price / tick_size) * tick_size
 
         # Фінальне округлення
         limit_price = round(limit_price, decimal_places if tick_size else 4)
