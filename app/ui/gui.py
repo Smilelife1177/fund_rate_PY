@@ -1984,6 +1984,14 @@ class FundingTraderApp(QMainWindow):
         if tab_data not in self.tab_data_list:
             return
         try:
+            if self.disable_trades_checkbox.isChecked():
+                label_text = f"{self.trans['predicted_profit_label'].split(':')[0]}: $0.0000 USDT"
+                tab_data["predicted_profit_label"].setText(label_text)
+                tab_data["predicted_profit_label"].setStyleSheet(
+                    "color: black; font-weight: bold;"
+                )
+                return
+
             price = tab_data.get("last_price") if price is None else price
             qty = tab_data.get("qty", 0)
             profit_pct = tab_data.get("profit_percentage", 0)
@@ -2298,6 +2306,8 @@ class FundingTraderApp(QMainWindow):
     def _on_disable_trades_changed(self, state):
         self.disable_funding_trades = (state == Qt.CheckState.Checked.value)
         self._update_disable_trades_checkbox_style()
+        for tab_data in self.tab_data_list:
+            self._update_predicted_profit(tab_data)
         self._save()
 
     # ------------------------------------------------------------------ #
